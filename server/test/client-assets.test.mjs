@@ -48,3 +48,18 @@ test('no privileged Supabase key is bundled into browser assets',async()=>{
     assert.doesNotMatch(source,/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/);
   }
 });
+
+test('touch controls are present and the landscape layout does not depend on narrow width',async()=>{
+  const html=await read('client/index.html');
+  const css=await read('client/touch.css');
+  const logic=await read('client/js/online.js');
+  assert.match(html,/href="touch\.css"/);
+  assert.match(html,/id="touchStick"/);
+  assert.match(html,/id="touchStickKnob"/);
+  assert.match(css,/@media \(pointer:coarse\)/);
+  assert.match(css,/@media \(pointer:coarse\) and \(orientation:landscape\)/);
+  assert.match(css,/body:has\(#hud:not\(\.hidden\)\) #topbar\{display:none\}/);
+  assert.match(logic,/this\.touchLookPointer=e\.pointerId/);
+  assert.match(logic,/touchMove\.x/);
+  assert.match(logic,/holdMobileButton\('mobileJump','Space'/);
+});
