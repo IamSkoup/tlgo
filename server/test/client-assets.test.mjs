@@ -61,11 +61,24 @@ test('touch controls are present and the landscape layout does not depend on nar
   assert.match(css,/body:has\(#hud:not\(\.hidden\)\) #topbar\{display:none\}/);
   assert.match(logic,/this\.touchLookPointer=e\.pointerId/);
   assert.match(logic,/touchMove\.x/);
-  assert.match(logic,/touchMove\.y=dy\*scale\/radius/);
+  assert.match(logic,/touchMove\.y=-dy\*scale\/radius/);
   assert.match(logic,/holdMobileButton\('mobileJump','Space'/);
   assert.match(logic,/jumpQueued=true;sendCurrentInput\(true\)/);
   assert.match(logic,/sprintButton\.onclick/);
   assert.match(css,/#chatBox\.chat-collapsed\{width:91px\}/);
   assert.match(css,/#mobilePad #mobileJump\{position:fixed/);
   assert.match(css,/\.vignette\{opacity:\.12\}/);
+});
+
+test('desktop capture and camera-relative movement are connected without changing mobile controls',async()=>{
+  const logic=await read('client/js/online.js');
+  const motion=await read('client/js/movement.mjs');
+  const css=await read('client/style.css');
+  assert.match(logic,/cameraRelativeVector\(scene\.yaw,lr,ud\)/);
+  assert.match(logic,/this\.canvas\.requestPointerLock\(\)/);
+  assert.match(logic,/document\.addEventListener\('pointerlockchange'/);
+  assert.match(logic,/document\.exitPointerLock\(\)/);
+  assert.match(logic,/predictedDisplayTarget\(t,this\.localVelocity/);
+  assert.match(motion,/export function cameraRelativeVector/);
+  assert.match(css,/\.vignette\{background:linear-gradient\(0deg,rgba\(16,12,10,\.18\),transparent 32%\)\}/);
 });

@@ -1,5 +1,6 @@
 /* Savanna Freedom Online — browser client. All multiplayer state is verified by server. */
 import {SoundDirector} from './audio.js';
+import {cameraRelativeVector,smoothInputVelocity,predictedDisplayTarget} from './movement.mjs';
 const $=id=>document.getElementById(id);
 const S=window.SF,T=window.THREE,CFG=window.SF_CONFIG||{};
 const sound=new SoundDirector();
@@ -12,7 +13,7 @@ addEventListener('pointerdown',()=>sound.start(),{once:true});
 const STARTERS=['lion','hyena','zebra','gazelle','warthog','monkey'];
 const COATS=[['Песочный','#d5a453'],['Медный','#c58a4b'],['Сухая трава','#b7a18a'],['Тёмная охра','#97816a'],['Пепельный','#96908b'],['Светлый','#e4dfce'],['Угольный','#6a5946'],['Золотистый','#d8b075']];
 const TIPS=[
-  'Здесь всё начинается с твоих лап. Двигайся клавишами WASD, беги с Shift, а пробелом перепрыгивай препятствия. На телефоне есть кнопки на экране.',
+  'Здесь всё начинается с твоих лап. Двигайся клавишами WASD, беги с Shift, а пробелом перепрыгивай препятствия. На ПК щёлкни по земле, чтобы закрепить курсор и управлять камерой мышью. Esc — освободить мышь. На телефоне есть кнопки на экране.',
   'Заглядывай за холмы и к водопою. Растения и древние следы можно собирать клавишей E. За это дают настоящие Claws на сервере.',
   'Опасные гиены охраняют свои тропы. Подойди и атакуй левой кнопкой мыши. Вблизи Скалы Прайда и лагеря новичков драться с игроками нельзя.',
   'В меню открой поручения от Кайона, Фули и Рафики. Если встретишь их лично, нажми R и поговори. Claws можно потратить на животных и развитие. Друзей приглашай через личную сессию.'
@@ -22,7 +23,7 @@ const escapeHtml=s=>String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').rep
 const fmt=n=>Number(n||0).toLocaleString('ru-RU');
 const notify=(message,seconds=4)=>{const node=document.createElement('div');node.className='toast';node.textContent=message;$('toastHolder').prepend(node);setTimeout(()=>node.remove(),seconds*1000)};
 function connection(state,message){$('connectionDot').parentElement.className='connection '+state;$('connectionText').textContent=message}
-function show(id){for(const k of ['menu','authScreen','resetScreen','creator','panel','hud'])$(k).classList.toggle('hidden',k!==id);data.view=id;}
+function show(id){for(const k of ['menu','authScreen','resetScreen','creator','panel','hud'])$(k).classList.toggle('hidden',k!==id);data.view=id;if(id!=='hud'&&document.pointerLockElement)document.exitPointerLock()}
 function setPanel(title,kicker,html){$('panelTitle').textContent=title;$('panelKicker').textContent=kicker;$('panelContent').innerHTML=html;show('panel')}
 function resumeView(){show(data.room?'hud':'menu');if(data.room)document.body.classList.add('ingame');else document.body.classList.remove('ingame');}
 const rgbToInt=hex=>Number.parseInt(hex.replace('#',''),16);
@@ -145,6 +146,7 @@ function updateWanted(){const badge=$('wantedBadge');badge.classList.toggle('hid
 let dialogueTimer=null;
 function closeDialogue(){clearInterval(dialogueTimer);dialogueTimer=null;$('dialogueBox').classList.add('hidden')}
 function showDialogue(m){
+ if(document.pointerLockElement)document.exitPointerLock();
  clearInterval(dialogueTimer);$('dialogueName').textContent=m.name||'Собеседник';$('dialogueText').textContent='';$('dialogueBox').classList.remove('hidden');
  const button=$('dialogueQuest');button.classList.toggle('hidden',!m.quest);button.onclick=()=>{if(m.quest)send({type:'quest',id:m.quest});closeDialogue()};
  const message=String(m.text||'').slice(0,500);let index=0;
@@ -242,7 +244,7 @@ function openPanel(kind){
   const check=(key,title,help,checked,kind)=>`<label class="setting-row"><span><strong>${title}</strong><small>${help}</small></span><input data-${kind}-check="${key}" type="checkbox" ${checked?'checked':''}></label>`;
   setPanel('Настройки','ЗВУК / ГРАФИКА / КАМЕРА / УПРАВЛЕНИЕ',`<div class="setting-group"><h3>Звук и музыка</h3>${soundSliders.map(([k,n,d])=>range(k,n,d,sound.settings[k],0,1,.01,'audio')).join('')}${check('muted','Полностью без звука','Быстрое отключение всех аудиодорожек.',sound.settings.muted,'audio')}${check('musicDynamic','Динамическая музыка','Тревожная музыка при розыске, быстрые ритмы в опасности и во время поручений.',sound.settings.musicDynamic,'audio')}${check('spatial','Направление звука','Удары и события справа и слева слышны с соответствующей стороны.',sound.settings.spatial,'audio')}<button id="previewAudio" class="secondary">Прослушать звук</button></div>
   <div class="setting-group"><h3>Графика и производительность</h3><label class="setting-row"><span><strong>Качество изображения</strong><small>Пресеты для слабых и мощных устройств.</small></span><select id="qualitySelect"><option value="low">Низкое</option><option value="medium">Среднее</option><option value="high">Высокое</option></select></label>${range('renderScale','Масштаб рендеринга','Понижай при тормозах. Интерфейс останется чётким.',prefs.renderScale,.5,1.25,.05,'pref')}${check('shadows','Динамические тени','Отключение заметно ускоряет игру на телефонах.',prefs.shadows,'pref')}${check('reducedEffects','Упростить окружение','Меньше декоративной растительности, меньше нагрузки на видеокарту.',prefs.reducedEffects,'pref')}<label class="setting-row"><span><strong>Ограничение кадров</strong><small>30 кадров экономят заряд и уменьшают нагрев.</small></span><select id="fpsLimit"><option value="0">Без ограничения</option><option value="30">30 кадров/с</option><option value="45">45 кадров/с</option><option value="60">60 кадров/с</option></select></label>${check('showFps','Показывать FPS','Счётчик кадров в правой части экрана.',prefs.showFps,'pref')}</div>
-  <div class="setting-group"><h3>Камера и управление</h3>${range('cameraDistance','Отдаление камеры','Расстояние от камеры до животного.',prefs.cameraDistance,7,23,1,'pref')}${range('sensitivity','Чувствительность мыши','Скорость поворота камеры при зажатой правой кнопке.',prefs.sensitivity,.3,2.5,.1,'pref')}${check('invertY','Инвертировать вертикальную камеру','Меняет направление движения камеры по вертикали.',prefs.invertY,'pref')}${check('pvp','Разрешить PvP','Другие игроки могут сражаться с тобой вне безопасных зон.',data.pvp,'game')}<p class="muted">WASD — движение, Shift — бег, пробел — прыжок, E — собрать, F — способность, R — поговорить с персонажем, левая кнопка мыши — атака, M — карта, Enter — чат, Esc — меню. Камера поворачивается правой кнопкой мыши. На телефоне используются экранные кнопки.</p></div><div class="setting-actions"><button id="resetSettings" class="ghost">Сбросить настройки</button><small>Изменения применяются сразу и сохраняются только на этом устройстве.</small></div>`);
+  <div class="setting-group"><h3>Камера и управление</h3>${range('cameraDistance','Отдаление камеры','Расстояние от камеры до животного.',prefs.cameraDistance,7,23,1,'pref')}${range('sensitivity','Чувствительность мыши','Скорость поворота камеры при закреплённом курсоре или зажатой правой кнопке.',prefs.sensitivity,.3,2.5,.1,'pref')}${check('invertY','Инвертировать вертикальную камеру','Меняет направление движения камеры по вертикали.',prefs.invertY,'pref')}${check('pvp','Разрешить PvP','Другие игроки могут сражаться с тобой вне безопасных зон.',data.pvp,'game')}<p class="muted">WASD — движение, Shift — бег, пробел — прыжок, E — собрать, F — способность, R — поговорить с персонажем, левая кнопка мыши — атака, M — карта, Enter — чат, Esc — меню. Щёлкни по земле, чтобы закрепить курсор и поворачивать камеру мышью. Esc освобождает курсор. На телефоне используются экранные кнопки.</p></div><div class="setting-actions"><button id="resetSettings" class="ghost">Сбросить настройки</button><small>Изменения применяются сразу и сохраняются только на этом устройстве.</small></div>`);
   $('qualitySelect').value=prefs.quality;$('qualitySelect').onchange=e=>{prefs.quality=e.target.value;data.quality=prefs.quality;savePrefs();scene.quality()};
   $('fpsLimit').value=String(prefs.fpsLimit);$('fpsLimit').onchange=e=>{prefs.fpsLimit=Number(e.target.value);savePrefs()};
   for(const input of $('panelContent').querySelectorAll('[data-audio-range]'))input.oninput=e=>{const key=e.target.dataset.audioRange;const value=Number(e.target.value);sound.updateSetting(key,value);const out=$('panelContent').querySelector(`[data-value="audio-${key}"]`);if(out)out.textContent=Math.round(value*100)+'%'};
@@ -306,7 +308,11 @@ class Scene {
     if(this.touchLookPointer!=null)return;
     e.preventDefault();this.touchLookPointer=e.pointerId;this.touchLookX=e.clientX;this.touchLookY=e.clientY;this.canvas.setPointerCapture(e.pointerId);
    }else if(e.button===2)this.dragging=true;
-   else if(e.button===0)this.attack();
+   else if(e.button===0){
+    if(document.pointerLockElement===this.canvas)this.attack();
+    else if(this.canvas.requestPointerLock)Promise.resolve(this.canvas.requestPointerLock()).catch(()=>{});
+    else this.attack();
+   }
   });
   this.canvas.addEventListener('pointermove',e=>{
    if(e.pointerId!==this.touchLookPointer||!data.room||data.view!=='hud')return;
@@ -316,7 +322,12 @@ class Scene {
    this.pitch=S.clamp(this.pitch+dy*.003*prefs.sensitivity*(prefs.invertY?-1:1),-.15,.8);
   });
   for(const event of ['pointerup','pointercancel','lostpointercapture'])this.canvas.addEventListener(event,e=>{if(e.pointerId===this.touchLookPointer)this.touchLookPointer=null});
-  addEventListener('pointerup',()=>this.dragging=false);addEventListener('pointermove',e=>{if(this.dragging&&data.room&&e.pointerType==='mouse'){this.yaw-=e.movementX*.0035*prefs.sensitivity;this.pitch=S.clamp(this.pitch+e.movementY*.002*prefs.sensitivity*(prefs.invertY?-1:1),-.15,.8)}});
+  addEventListener('pointerup',()=>this.dragging=false);addEventListener('pointermove',e=>{if((this.dragging||document.pointerLockElement===this.canvas)&&data.room&&data.view==='hud'&&e.pointerType==='mouse'){this.yaw-=e.movementX*.0035*prefs.sensitivity;this.pitch=S.clamp(this.pitch+e.movementY*.002*prefs.sensitivity*(prefs.invertY?-1:1),-.15,.8)}});
+  document.addEventListener('pointerlockchange',()=>{
+   const released=this.pointerWasLocked&&document.pointerLockElement!==this.canvas;
+   this.pointerWasLocked=document.pointerLockElement===this.canvas;
+   if(released&&data.room&&data.view==='hud'&&$('dialogueBox').classList.contains('hidden')&&document.activeElement!==$('chatInput'))show('menu');
+  });
  }
  quality(){const low=data.quality==='low';const ratio=low?.72:data.quality==='high'?Math.min(devicePixelRatio,1.8):Math.min(devicePixelRatio,1.2);this.renderer.setPixelRatio(Math.max(.45,Math.min(2.2,ratio*prefs.renderScale)));this.renderer.shadowMap.enabled=!low&&prefs.shadows;this.sun.castShadow=!low&&prefs.shadows;this.world.grass.visible=!low&&!prefs.reducedEffects;this.renderer.setSize(innerWidth,innerHeight);$('fpsIndicator').classList.toggle('hidden',!prefs.showFps)}
  addAnimal(id,name,species,x,z,named=false,color=null){
@@ -345,7 +356,7 @@ class Scene {
    group.userData.marker=mote;this.scene.add(group);this.resourceObjects.set(r.id,group);
   }
  }
- resetCamera(){this.camera.position.set(-65,15,70);this.yaw=2.5;this.pitch=.26}
+ resetCamera(){this.camera.position.set(-65,15,70);this.yaw=2.5;this.pitch=.26;this.localVelocity={x:0,z:0}}
  handleSnapshot(m){
   data.roomWeather=Number(m.weather??data.roomWeather);this.game.weather.index=data.roomWeather;
   const displayHour=(18+this.time/75)%24;
@@ -385,7 +396,14 @@ class Scene {
   for(const [id,mesh] of this.resourceObjects){const r=data.resources.get(id);mesh.visible=!!r&&Date.now()>=r.readyAt;if(mesh.visible){mesh.userData.marker.position.y=1.65+Math.sin(this.time*2+mesh.position.x)*.16;mesh.userData.marker.rotation.y+=dt*1.2}}
   for(const [id,e] of [...data.playerObjects,...data.npcObjects]){
    const t=e.target||{x:e.x,z:e.z};const oldX=e.x,oldZ=e.z;
-   const k=1-Math.exp(-dt*(id===data.me?14:10));e.x=S.lerp(e.x,t.x,k);e.z=S.lerp(e.z,t.z,k);e.heading=t.heading??(Math.atan2(e.x-oldX,e.z-oldZ)||e.heading);
+   if(id===data.me&&inGame){
+    const input=currentInputState(),walkSpeed=Number(speciesByCode(data.profile?.selected_species)?.speed)||8;
+    this.localVelocity=smoothInputVelocity(this.localVelocity||{x:0,z:0},input,walkSpeed*(input.sprint?1.5:1),dt);
+    const visual=predictedDisplayTarget(t,this.localVelocity,(now-e.lastNet)/1000);
+    if(Math.hypot(visual.x-e.x,visual.z-e.z)>15){e.x=t.x;e.z=t.z;this.localVelocity={x:0,z:0}}
+    else{const k=1-Math.exp(-dt*28);e.x=S.lerp(e.x,visual.x,k);e.z=S.lerp(e.z,visual.z,k)}
+   }else{const k=1-Math.exp(-dt*10);e.x=S.lerp(e.x,t.x,k);e.z=S.lerp(e.z,t.z,k)}
+   e.heading=t.heading??(Math.atan2(e.x-oldX,e.z-oldZ)||e.heading);
    e.vx=(e.x-oldX)/Math.max(dt,.01);e.vz=(e.z-oldZ)/Math.max(dt,.01);
    e.y=S.height(e.x,e.z)+(t.jump?.85:0);e.model.position.set(e.x,e.y,e.z);e.model.rotation.y=e.heading;
    e.attackAnim=Math.max(0,e.attackAnim-dt);S.animateAnimal(e,this.time,dt);
@@ -394,7 +412,7 @@ class Scene {
    const look=new T.Vector3(me.x,me.y+2.1,me.z);const dist=prefs.cameraDistance;
    const desired=new T.Vector3(me.x+Math.sin(this.yaw)*dist*Math.cos(this.pitch),me.y+5+Math.sin(this.pitch)*dist,me.z+Math.cos(this.yaw)*dist*Math.cos(this.pitch));
    desired.y=Math.max(desired.y,S.height(desired.x,desired.z)+2);
-   this.camera.position.lerp(desired,1-Math.exp(-dt*5.5));this.camera.lookAt(look);
+   this.camera.position.lerp(desired,1-Math.exp(-dt*12));this.camera.lookAt(look);
    const near=[...data.resources.values()].filter(r=>Date.now()>=r.readyAt).sort((a,b)=>S.dist(a,me)-S.dist(b,me))[0];
    const contact=this.namedNPCs.filter(n=>Math.hypot(me.x-n.x,me.z-n.z)<11).sort((a,b)=>S.dist(me,a)-S.dist(me,b))[0];
    $('talkButton').classList.toggle('hidden',!contact);
@@ -437,7 +455,7 @@ function updateTouchMove(e){
  const box=touchStick.getBoundingClientRect(),radius=Math.min(box.width,box.height)*.32;
  const dx=e.clientX-box.left-box.width/2,dy=e.clientY-box.top-box.height/2;
  const distance=Math.hypot(dx,dy),scale=distance>radius?radius/distance:1;
- touchMove.x=dx*scale/radius;touchMove.y=dy*scale/radius;
+ touchMove.x=dx*scale/radius;touchMove.y=-dy*scale/radius;
  touchKnob.style.transform=`translate(${Math.round(dx*scale)}px,${Math.round(dy*scale)}px)`;
 }
 touchStick.addEventListener('pointerdown',e=>{
@@ -452,7 +470,7 @@ addEventListener('keydown',e=>{
  if(['Space','ArrowUp','ArrowDown'].includes(e.code))e.preventDefault();const first=!keys.has(e.code);keys.add(e.code);if(first&&data.room&&e.code==='Space'){sound.start();sound.play('jump','effects',{volume:.66})}
  if(e.code==='Escape'){if(data.view==='panel')resumeView();else if(data.room)show(data.view==='hud'?'menu':'hud')}
  if(e.code==='KeyM'&&data.room)openPanel('map');
- if(e.code==='Enter'&&data.room&&data.view==='hud')$('chatInput').focus();
+ if(e.code==='Enter'&&data.room&&data.view==='hud'){if(document.pointerLockElement)document.exitPointerLock();$('chatInput').focus()}
  if(e.code==='KeyE'&&data.room)scene.gather();
  if(e.code==='KeyF'&&data.room&&first)scene.ability();
  if(e.code==='KeyR'&&data.room&&first)scene.talk();
@@ -492,11 +510,14 @@ if(matchMedia('(pointer: coarse)').matches){
  $('gatherButton').textContent='Собрать';
  $('talkButton').textContent='Диалог';
 }
+function currentInputState(){
+ const k=code=>keys.has(code)||mobile.has(code),lr=Number(k('KeyD'))-Number(k('KeyA'))+touchMove.x,ud=Number(k('KeyW'))-Number(k('KeyS'))+touchMove.y;
+ return {...cameraRelativeVector(scene.yaw,lr,ud),sprint:k('ShiftLeft')||k('ShiftRight'),jump:k('Space')};
+}
 function sendCurrentInput(forceJump=false){
  if(!data.room||data.view!=='hud'||!data.ws||data.ws.readyState!==WebSocket.OPEN)return;
- const k=code=>keys.has(code)||mobile.has(code),lr=Number(k('KeyD'))-Number(k('KeyA'))+touchMove.x,ud=Number(k('KeyW'))-Number(k('KeyS'))+touchMove.y;
- const yaw=scene.yaw,vecX=lr*Math.cos(yaw)+ud*Math.sin(yaw),vecZ=-lr*Math.sin(yaw)+ud*Math.cos(yaw);
- send({type:'input',x:vecX,z:vecZ,sprint:k('ShiftLeft')||k('ShiftRight'),jump:forceJump||jumpQueued||k('Space')});
+ const input=currentInputState();
+ send({type:'input',...input,jump:forceJump||jumpQueued||input.jump});
  if(!forceJump)jumpQueued=false;
 }
 setInterval(()=>sendCurrentInput(),65);
