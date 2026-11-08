@@ -58,6 +58,10 @@ export class GameCore {
         if(input.jump&&now>=peer.player.jumpUntil)peer.player.jumpUntil=now+800;
         return;
       }
+      case 'stop_input':{
+        if(peer.player){peer.player.input={x:0,z:0,sprint:false,jump:false};peer.player.vx=0;peer.player.vz=0;}
+        return;
+      }
       case 'attack':return this.attack(peer,cleanText(msg.target,48));
       case 'ability':return this.ability(peer);
       case 'gather':return this.gather(peer,cleanText(msg.id,32));

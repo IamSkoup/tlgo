@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {describeQuest,questDistance} from '../../client/js/quest.mjs';
+import {describeQuest,questDistance,questBearing} from '../../client/js/quest.mjs';
 import {QUESTS} from '../src/rules.mjs';
 
 test('Fuli quest tells the player the exact next location and its distance',()=>{
@@ -29,4 +29,13 @@ test('hyena quest marker favors a living enemy',()=>{
  const result=describeQuest({id:'kion',progress:0},QUESTS,new Map(),enemies,{x:0,z:0});
  assert.equal(result.target.key,'hyena-hyena-2');
  assert.match(result.step,/гиен/);
+});
+
+test('quest compass gives camera-relative directions regardless of map orientation',()=>{
+ const player={x:0,z:0};
+ assert.equal(questBearing({x:0,z:-10},player,0),0);
+ assert.ok(Math.abs(questBearing({x:10,z:0},player,0)-Math.PI/2)<1e-9);
+ assert.ok(Math.abs(questBearing({x:-10,z:0},player,0)+Math.PI/2)<1e-9);
+ assert.equal(questBearing(null,player,0),null);
+ assert.equal(questBearing({x:0,z:0},player,2),0);
 });

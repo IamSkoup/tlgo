@@ -1,7 +1,7 @@
 /* Savanna Freedom Online — browser client. All multiplayer state is verified by server. */
 import {SoundDirector} from './audio.js';
 import {cameraRelativeVector,smoothInputVelocity,reconcilePredictedPosition,smoothHeading} from './movement.mjs';
-import {describeQuest,questDistance} from './quest.mjs';
+import {describeQuest,questDistance,questBearing} from './quest.mjs';
 const $=id=>document.getElementById(id);
 const S=window.SF,T=window.THREE,CFG=window.SF_CONFIG||{};
 const sound=new SoundDirector();
@@ -24,7 +24,15 @@ const escapeHtml=s=>String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').rep
 const fmt=n=>Number(n||0).toLocaleString('ru-RU');
 const notify=(message,seconds=4)=>{const node=document.createElement('div');node.className='toast';node.textContent=message;$('toastHolder').prepend(node);setTimeout(()=>node.remove(),seconds*1000)};
 function connection(state,message){$('connectionDot').parentElement.className='connection '+state;$('connectionText').textContent=message}
-function show(id){for(const k of ['menu','authScreen','resetScreen','creator','panel','hud'])$(k).classList.toggle('hidden',k!==id);data.view=id;if(id!=='hud'&&document.pointerLockElement)document.exitPointerLock()}
+function show(id){
+ if(id!=='hud'&&data.view==='hud'){
+  if(data.room&&data.ws?.readyState===WebSocket.OPEN)data.ws.send(JSON.stringify({type:'stop_input'}));
+  keys.clear();mobile.clear();resetTouchMove();jumpQueued=false;
+  $('mobileSprint').classList.remove('is-active');$('mobileSprint').setAttribute('aria-pressed','false');
+ }
+ for(const k of ['menu','authScreen','resetScreen','creator','panel','hud'])$(k).classList.toggle('hidden',k!==id);
+ data.view=id;if(id!=='hud'&&document.pointerLockElement)document.exitPointerLock();
+}
 function setPanel(title,kicker,html){$('panelTitle').textContent=title;$('panelKicker').textContent=kicker;$('panelContent').innerHTML=html;show('panel')}
 function resumeView(){show(data.room?'hud':'menu');if(data.room)document.body.classList.add('ingame');else document.body.classList.remove('ingame');}
 const rgbToInt=hex=>Number.parseInt(hex.replace('#',''),16);
@@ -285,7 +293,7 @@ function updateObjective(){
  const party=data.party?.operation;
  if(guide){
   const percent=Math.round(100*guide.progress/Math.max(1,guide.total));
-  box.innerHTML=`<div class="quest-tracker-label">ТЕКУЩЕЕ ПОРУЧЕНИЕ</div><div class="quest-tracker-title">${escapeHtml(guide.title)}</div><div class="quest-tracker-step">${escapeHtml(guide.step)}</div><div class="quest-tracker-progress"><span style="width:${percent}%"></span></div><div class="quest-tracker-meta"><span>${guide.progress} из ${guide.total}${guide.target?' · <b id="questDistance">Ищем направление…</b>':''}</span><span>+${fmt(guide.reward)} Claws</span></div>${party&&party.stage!=='completed'?`<small class="quest-tracker-party">Команда — ${escapeHtml(party.stageName)} · ${party.progress}/${party.total}</small>`:''}<div class="quest-tracker-actions"><button type="button" data-quest-action="map">Карта</button><button type="button" data-quest-action="abandon">Отказаться</button></div>`;
+  box.innerHTML=`<div class="quest-tracker-label">ТЕКУЩЕЕ ПОРУЧЕНИЕ</div><div class="quest-tracker-title">${escapeHtml(guide.title)}</div><div class="quest-tracker-step">${escapeHtml(guide.step)}</div><div class="quest-tracker-progress"><span style="width:${percent}%"></span></div><div class="quest-tracker-meta"><span>${guide.progress} из ${guide.total}${guide.target?' · <span class="quest-direction" id="questHeading">↑</span> <b id="questDistance">Ищем направление…</b>':''}</span><span>+${fmt(guide.reward)} Claws</span></div>${party&&party.stage!=='completed'?`<small class="quest-tracker-party">Команда — ${escapeHtml(party.stageName)} · ${party.progress}/${party.total}</small>`:''}<div class="quest-tracker-actions"><button type="button" data-quest-action="map">Карта</button><button type="button" data-quest-action="abandon">Отказаться</button></div>`;
   refreshObjectiveDistance();
  }else{
   box.innerHTML=`<div class="quest-tracker-label">СВОБОДЕН ОТ ПОРУЧЕНИЙ</div><div class="quest-tracker-empty">Поговори с Фули, Кайоном или Рафики, чтобы получить задание.</div><div class="quest-tracker-actions"><button type="button" data-quest-action="browse">Выбрать поручение</button></div>`;
@@ -295,6 +303,8 @@ function refreshObjectiveDistance(){
  const node=$('questDistance'),pos=data.playerObjects.get(data.me),distance=questDistance(data.questAim,pos);
  const threshold=data.serverQuest?.id==='fuli'?23:data.serverQuest?.id==='rafiki'?5.5:5;
  if(node)node.textContent=distance==null?'Цель на карте':distance<threshold?'Ты у цели':`До цели ${distance} м`;
+ const arrow=$('questHeading'),bearing=questBearing(data.questAim,pos,scene?.yaw);
+ if(arrow&&bearing!=null)arrow.style.transform=`rotate(${bearing}rad)`;
 }
 function requestAbandonQuest(){
  if(!data.serverQuest||data.serverQuest.completed)return;
@@ -319,6 +329,7 @@ function receiveDirect(message){
  else if(message.userId!==data.profile?.id)notify('Личное сообщение от '+message.author+'. Открой друзей.',6);
 }
 $('chatForm').onsubmit=e=>{e.preventDefault();const field=$('chatInput');if(field.value.trim())send({type:'chat',scope:$('chatChannel').value,body:field.value.trim()});field.value='';field.blur()};
+$('chatInput').addEventListener('focus',()=>{keys.clear();mobile.clear();resetTouchMove();if(data.room&&data.ws?.readyState===WebSocket.OPEN)data.ws.send(JSON.stringify({type:'stop_input'}))});
 $('chatChannel').onchange=e=>{const channel=e.target.value;$('chatHistory').replaceChildren();$('chatInput').placeholder=channel==='local'?'Написать тем, кто рядом…':channel==='clan'?'Написать своему прайду…':'Написать в общий чат…';if(channel==='session'||channel==='clan')send({type:'chat_history',scope:channel})};
 $('chatToggle').onclick=()=>{$('chatBox').classList.toggle('chat-collapsed');$('chatToggle').textContent=$('chatBox').classList.contains('chat-collapsed')?(matchMedia('(pointer: coarse)').matches?'Чат':'Развернуть'):'Свернуть'};
 function showOnboard(){data.onboardIndex=0;updateOnboard();$('onboarding').classList.remove('hidden')}
@@ -559,7 +570,7 @@ addEventListener('keydown',e=>{
  if(e.code==='KeyR'&&data.room&&first)scene.talk();
  if(['KeyW','KeyA','KeyS','KeyD','ShiftLeft','ShiftRight','Space'].includes(e.code))sendCurrentInput();
 });
-addEventListener('keyup',e=>{keys.delete(e.code);sendCurrentInput()});addEventListener('blur',()=>{keys.clear();mobile.clear();resetTouchMove();jumpQueued=false;$('mobileSprint').classList.remove('is-active');$('mobileSprint').setAttribute('aria-pressed','false');sendCurrentInput()});
+addEventListener('keyup',e=>{keys.delete(e.code);sendCurrentInput()});addEventListener('blur',()=>{keys.clear();mobile.clear();resetTouchMove();jumpQueued=false;$('mobileSprint').classList.remove('is-active');$('mobileSprint').setAttribute('aria-pressed','false');if(data.room&&data.ws?.readyState===WebSocket.OPEN)data.ws.send(JSON.stringify({type:'stop_input'}))});
 for(const b of document.querySelectorAll('[data-move]')){
  const code={up:'KeyW',down:'KeyS',left:'KeyA',right:'KeyD'}[b.dataset.move];
  b.addEventListener('pointerdown',e=>{e.preventDefault();mobile.add(code);b.setPointerCapture(e.pointerId);sendCurrentInput()});

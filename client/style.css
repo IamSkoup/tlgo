@@ -47,6 +47,7 @@ em{font-family:'Playfair Display',Georgia,serif;font-style:italic;color:var(--go
 .quest-tracker-progress span{display:block;height:100%;border-radius:8px;background:linear-gradient(90deg,#b77946,#f4c179);transition:width .3s ease}
 .quest-tracker-meta{display:flex;justify-content:space-between;gap:9px;color:#d4b898;font-size:10px;flex-wrap:wrap}
 .quest-tracker-meta b{font-weight:900;color:#ffdc9d}
+.quest-direction{display:inline-block;margin:0 2px;color:#ffd08b;font-size:16px;font-weight:900;line-height:.8;vertical-align:middle;transition:transform .18s ease-out;transform-origin:center}
 .quest-tracker-party{display:block;color:#c9b6a0;margin-top:7px}
 .quest-tracker-actions,.quest-panel-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
 .quest-tracker-actions button{padding:7px 12px;border-radius:7px;background:#533724c7;border:1px solid #c798625e;color:#ffdfb5;font-size:10px;font-weight:800;cursor:pointer;touch-action:manipulation}

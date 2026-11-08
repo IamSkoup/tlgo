@@ -22,6 +22,19 @@ test('two independent players share one session, snapshots and animation movemen
  assert.notEqual(f.peerB.player.x,f.peerA.player.x);
 });
 
+test('opening a menu can stop movement immediately instead of waiting for input timeout',async()=>{
+ const f=await fixture(),p=f.peerA.player;
+ await f.engine.command(f.peerA,{type:'input',x:1,z:0,sprint:true});
+ for(let i=0;i<3;i++)f.tick();
+ assert.ok(p.vx>0);
+ const stopped=p.x;
+ await f.engine.command(f.peerA,{type:'stop_input'});
+ for(let i=0;i<5;i++)f.tick();
+ assert.equal(p.x,stopped);
+ assert.equal(p.vx,0);
+ assert.equal(p.input.sprint,false);
+});
+
 test('forged teleport, damage, money, and diagonal speed are rejected or ignored',async()=>{
  const f=await fixture(),p=f.peerA.player;
  await f.engine.command(f.peerA,{type:'input',x:999999,z:1,position:{x:320,z:320},balance:100000000});

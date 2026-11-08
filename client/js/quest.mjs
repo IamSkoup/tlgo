@@ -33,3 +33,13 @@ export function describeQuest(state, definitions, resources, npcs, position) {
 }
 
 export function questDistance(target,position){return target&&position?Math.round(distance(target,position)):null}
+
+// Positive radians mean the goal is to the right of the current camera view.
+export function questBearing(target,position,yaw){
+ if(!target||!position||!Number.isFinite(yaw))return null;
+ const dx=target.x-position.x,dz=target.z-position.z;
+ if(Math.hypot(dx,dz)<.1)return 0;
+ const forward=dx*-Math.sin(yaw)+dz*-Math.cos(yaw);
+ const right=dx*Math.cos(yaw)+dz*-Math.sin(yaw);
+ return Math.atan2(right,forward);
+}
