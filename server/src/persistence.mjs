@@ -50,6 +50,9 @@ export class SupabaseStore {
   async setQuest(user_id,quest_id,progress,state){
     return unwrap(await this.api.from('quest_progress').upsert({user_id,quest_id,progress,state,completed_at:state==='completed'?new Date().toISOString():null}));
   }
+  async abandonQuest(user_id,quest_id){
+    return unwrap(await this.api.from('quest_progress').delete().eq('user_id',user_id).eq('quest_id',quest_id).eq('state','active').select('quest_id'));
+  }
   async saveChat(author,session_id,body,{clan_id=null,recipient=null}={}){
     return unwrap(await this.api.from('chat_messages').insert({author,session_id,clan_id,recipient,body}));
   }

@@ -34,6 +34,7 @@ export class FakeStore {
   friends(id){return this.friendsMap.filter(f=>f.requester===id||f.recipient===id).map(f=>({...f,other:this.players.get(f.requester===id?f.recipient:f.requester)}))}
   clan(){return null}
   async setQuest(id,quest_id,progress,state){const arr=this.questMap.get(id);const ix=arr.findIndex(q=>q.quest_id===quest_id);const value={quest_id,progress,state};if(ix<0)arr.push(value);else arr[ix]=value}
+  async abandonQuest(id,quest_id){const arr=this.questMap.get(id);const index=arr.findIndex(q=>q.quest_id===quest_id&&q.state==='active');if(index<0)return [];return arr.splice(index,1)}
   findSession(code){return [...this.sessions.values()].find(r=>r.invite_code===code)}
   createSession(r){this.sessions.set(r.id,r)}
   joinSession(){return null}

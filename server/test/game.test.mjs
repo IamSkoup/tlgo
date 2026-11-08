@@ -66,6 +66,29 @@ test('active quest progress survives a session leave and rejoin',async()=>{
  assert.ok(f.a.some(m=>m.type==='quest_state'&&m.progress===1));
 });
 
+test('an active quest can be abandoned without reward, then accepted from the beginning',async()=>{
+ const f=await fixture();f.peerA.player.x=-77;f.peerA.player.z=60;
+ await f.engine.command(f.peerA,{type:'quest',id:'rafiki'});
+ await f.engine.command(f.peerA,{type:'gather',id:'herb-a'});
+ assert.equal(f.peerA.player.questProgress,1);
+ const balance=f.store.wallet(id1);
+ await f.engine.command(f.peerA,{type:'quest_abandon'});
+ assert.equal(f.peerA.player.quest,null);
+ assert.equal(f.peerA.player.questProgress,0);
+ assert.equal(f.store.wallet(id1),balance);
+ assert.deepEqual(f.store.quests(id1),[]);
+ assert.ok(f.a.some(m=>m.type==='quest_state'&&m.id==='rafiki'&&m.abandoned));
+ await f.engine.command(f.peerA,{type:'leave'});
+ await f.engine.command(f.peerA,{type:'join'});
+ assert.equal(f.peerA.player.quest,null);
+ await f.engine.command(f.peerA,{type:'quest',id:'rafiki'});
+ assert.equal(f.peerA.player.questProgress,0);
+ await f.engine.command(f.peerA,{type:'quest_abandon'});
+ await f.engine.command(f.peerA,{type:'quest_abandon'});
+ assert.ok(f.a.some(m=>m.type==='error'&&m.message.includes('нет активного')));
+ assert.equal(f.store.wallet(id1),balance);
+});
+
 test('server checks distance and safe zones for combat, hunt payout, respawns',async()=>{
  const f=await fixture(),enemy=f.peerA.room.npcs.get('hyena-1');
  await f.engine.command(f.peerA,{type:'attack',target:enemy.id});assert.equal(enemy.hp,enemy.maxHp);

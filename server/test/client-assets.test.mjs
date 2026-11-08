@@ -61,7 +61,7 @@ test('touch controls are present and the landscape layout does not depend on nar
   assert.match(css,/body:has\(#hud:not\(\.hidden\)\) #topbar\{display:none\}/);
   assert.match(logic,/this\.touchLookPointer=e\.pointerId/);
   assert.match(logic,/touchMove\.x/);
-  assert.match(logic,/touchMove\.y=-dy\*scale\/radius/);
+  assert.match(logic,/touchMove\.y=distance\?-dy\/distance\*strength:0/);
   assert.match(logic,/holdMobileButton\('mobileJump','Space'/);
   assert.match(logic,/jumpQueued=true;sendCurrentInput\(true\)/);
   assert.match(logic,/sprintButton\.onclick/);
@@ -78,9 +78,25 @@ test('desktop capture and camera-relative movement are connected without changin
   assert.match(logic,/this\.canvas\.requestPointerLock\(\)/);
   assert.match(logic,/document\.addEventListener\('pointerlockchange'/);
   assert.match(logic,/document\.exitPointerLock\(\)/);
-  assert.match(logic,/predictedDisplayTarget\(t,this\.localVelocity/);
+  assert.match(logic,/reconcilePredictedPosition\(e,t,this\.localVelocity/);
+  assert.match(logic,/smoothHeading\(e\.heading,desiredHeading,dt\)/);
   assert.match(motion,/export function cameraRelativeVector/);
   assert.match(css,/\.vignette\{background:linear-gradient\(0deg,rgba\(16,12,10,\.18\),transparent 32%\)\}/);
+});
+
+test('quest tracker includes abandonment, directions, map targets and mobile layout',async()=>{
+ const html=await read('client/index.html'),logic=await read('client/js/online.js');
+ const css=await read('client/style.css'),touch=await read('client/touch.css');
+ const guide=await read('client/js/quest.mjs'),game=await read('server/src/game.mjs');
+ assert.match(html,/id="dialogueAbandon"/);
+ assert.match(logic,/data-quest-action="abandon"/);
+ assert.match(logic,/data\.questAim/);
+ assert.match(logic,/questDistance\(data\.questAim,pos\)/);
+ assert.match(logic,/data-quest-action="map"/);
+ assert.match(guide,/result\.target=\{x:next\.x,z:next\.z/);
+ assert.match(game,/case 'quest_abandon'/);
+ assert.match(css,/\.quest-tracker-title/);
+ assert.match(touch,/#hudObjective\{width:min\(355px,35vw\)/);
 });
 
 test('world features and death screen are present without a raised pipe or jump sound',async()=>{

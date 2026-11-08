@@ -1,6 +1,7 @@
 /* Savanna Freedom Online — browser client. All multiplayer state is verified by server. */
 import {SoundDirector} from './audio.js';
-import {cameraRelativeVector,smoothInputVelocity,predictedDisplayTarget} from './movement.mjs';
+import {cameraRelativeVector,smoothInputVelocity,reconcilePredictedPosition,smoothHeading} from './movement.mjs';
+import {describeQuest,questDistance} from './quest.mjs';
 const $=id=>document.getElementById(id);
 const S=window.SF,T=window.THREE,CFG=window.SF_CONFIG||{};
 const sound=new SoundDirector();
@@ -8,7 +9,7 @@ const DEFAULT_PREFS={quality:'medium',renderScale:1,shadows:true,fpsLimit:0,came
 let storedPrefs={};try{storedPrefs=JSON.parse(localStorage.getItem('sf_game_settings')||'{}')}catch{}
 const prefs={...DEFAULT_PREFS,...storedPrefs};
 const savePrefs=()=>localStorage.setItem('sf_game_settings',JSON.stringify(prefs));
-const data={session:null,profile:null,species:[],owned:[],wallet:0,ledger:[],quests:[],friends:[],clan:null,party:null,partyInvites:[],activePanel:null,selectedFriend:null,directRows:[],directLoadedFor:null,room:null,me:null,playerObjects:new Map(),npcObjects:new Map(),resources:new Map(),serverQuest:null,ws:null,connecting:false,retry:0,desiredRoom:null,onboardIndex:0,view:'menu',quality:prefs.quality,pvp:prefs.pvp,wanted:0,roomWeather:0,abilityReady:true};
+const data={session:null,profile:null,species:[],owned:[],wallet:0,ledger:[],quests:[],friends:[],clan:null,party:null,partyInvites:[],activePanel:null,selectedFriend:null,directRows:[],directLoadedFor:null,room:null,me:null,playerObjects:new Map(),npcObjects:new Map(),resources:new Map(),serverQuest:null,questAim:null,ws:null,connecting:false,retry:0,desiredRoom:null,onboardIndex:0,view:'menu',quality:prefs.quality,pvp:prefs.pvp,wanted:0,roomWeather:0,abilityReady:true};
 addEventListener('pointerdown',()=>sound.start(),{once:true});
 const STARTERS=['lion','hyena','zebra','gazelle','warthog','monkey'];
 const COATS=[['Песочный','#d5a453'],['Медный','#c58a4b'],['Сухая трава','#b7a18a'],['Тёмная охра','#97816a'],['Пепельный','#96908b'],['Светлый','#e4dfce'],['Угольный','#6a5946'],['Золотистый','#d8b075']];
@@ -119,7 +120,7 @@ function handleMessage(m){
   case 'snapshot':scene.handleSnapshot(m);break;
   case 'hit':scene.hit(m);break;
   case 'resource':{const r=data.resources.get(m.id);if(r){r.readyAt=m.readyAt;const me=data.playerObjects.get(data.me);if(me&&S.dist(r,me)<9)sound.play('collect','effects',{volume:.48})}break}
-  case 'quest_state':data.serverQuest=m;updateObjective();if(m.completed)notify('Поручение выполнено! Награда зачислена.',7);break;
+  case 'quest_state':data.serverQuest=m.completed||m.abandoned?null:m;updateObjective();if(m.completed)notify('Поручение выполнено! Награда зачислена.',7);if(m.abandoned)notify('Поручение отменено. Можно взять другое.',5);break;
   case 'chat':if(m.channel==='private')receiveDirect(m);else if((m.channel||'session')===$('chatChannel').value)appendChat(m);break;
   case 'chat_history':if(m.channel===$('chatChannel').value){$('chatHistory').replaceChildren();for(const row of m.rows||[])appendChat(row)}break;
   case 'dm_history':if(data.selectedFriend?.id===m.with){data.directRows=m.rows||[];data.directLoadedFor=m.with;renderDirectHistory()}break;
@@ -160,7 +161,10 @@ function closeDialogue(){clearInterval(dialogueTimer);dialogueTimer=null;$('dial
 function showDialogue(m){
  if(document.pointerLockElement)document.exitPointerLock();
  clearInterval(dialogueTimer);$('dialogueName').textContent=m.name||'Собеседник';$('dialogueText').textContent='';$('dialogueBox').classList.remove('hidden');
- const button=$('dialogueQuest');button.classList.toggle('hidden',!m.quest);button.onclick=()=>{if(m.quest)send({type:'quest',id:m.quest});closeDialogue()};
+ const button=$('dialogueQuest'),cancel=$('dialogueAbandon');
+ const active=data.serverQuest&&!data.serverQuest.completed&&!data.serverQuest.abandoned;
+ button.classList.toggle('hidden',!m.quest||!!active);button.onclick=()=>{if(m.quest)send({type:'quest',id:m.quest});closeDialogue()};
+ cancel.classList.toggle('hidden',!active||active.id!==m.contact);cancel.onclick=()=>{if(confirm('Отказаться от текущего поручения? Прогресс будет потерян.')){send({type:'quest_abandon'});closeDialogue()}};
  const message=String(m.text||'').slice(0,500);let index=0;
  dialogueTimer=setInterval(()=>{index=Math.min(message.length,index+2);$('dialogueText').textContent=message.slice(0,index);if(index===message.length){clearInterval(dialogueTimer);dialogueTimer=null}},28);
 }
@@ -202,8 +206,12 @@ function openPanel(kind){
   for(const b of $('panelContent').querySelectorAll('[data-upgrade]'))b.onclick=()=>send({type:'upgrade',species:b.dataset.species,stat:b.dataset.upgrade});
  }else if(kind==='quests'){
   const q=data.serverQuests||{rafiki:{title:'Травы для Рафики',description:'Найди три лечебных растения.',reward:75},fuli:{title:'Следопыт Фули',description:'Пробеги от водопоя до Скалы Прайда.',reward:95},kion:{title:'Патруль Кайона',description:'Прогони двух опасных гиен.',reward:130}};
-  setPanel('Поручения','КОНТАКТЫ / НАГРАДЫ',`<p class="muted">Поручения проверяются сервером. Повторно получить награду за уже выполненное задание не выйдет.</p><div class="panel-grid">${Object.entries(q).map(([id,item])=>{const done=data.quests.find(x=>x.quest_id===id&&x.state==='completed');return `<div class="item-card"><span class="badge">${escapeHtml(item.contact||'Земли прайда')}</span><h3>${escapeHtml(item.title)}</h3><p>${escapeHtml(item.description)}</p><strong>+${item.reward} Claws</strong><div><button class="primary" data-quest="${id}" ${done?'disabled':''}>${done?'Завершено':'Взять поручение'}</button></div></div>`}).join('')}</div>`);
+  const active=data.serverQuest&&!data.serverQuest.completed&&!data.serverQuest.abandoned?data.serverQuest:null;
+  const guidance=describeQuest(active,q,data.resources,data.npcObjects,data.playerObjects.get(data.me));
+  setPanel('Поручения','КОНТАКТЫ / НАГРАДЫ',`${active?`<div class="item-card quest-current"><span class="badge">СЕЙЧАС ВЫПОЛНЯЕТСЯ</span><h3>${escapeHtml(guidance?.title||'Поручение')}</h3><p>${escapeHtml(guidance?.step||'Исследуй саванну.')}</p><strong>${active.progress} из ${active.total}</strong><div class="quest-panel-actions"><button class="secondary" id="currentQuestMap">Показать на карте</button><button class="ghost" id="currentQuestAbandon">Отказаться от поручения</button></div></div>`:'<p class="muted">Выбери поручение. Выполнять одновременно можно только одно. За пройденное повторно награду не выдают.</p>'}<div class="panel-grid">${Object.entries(q).map(([id,item])=>{const done=data.quests.find(x=>x.quest_id===id&&x.state==='completed'),selected=active?.id===id;return `<div class="item-card"><span class="badge">${escapeHtml(item.contact||'Земли прайда')}</span><h3>${escapeHtml(item.title)}</h3><p>${escapeHtml(item.description)}</p><strong>+${item.reward} Claws</strong><div><button class="primary" data-quest="${id}" ${done||!!active?'disabled':''}>${done?'Завершено':selected?'Выполняется':active?'Сначала откажись от текущего':'Взять поручение'}</button></div></div>`}).join('')}</div>`);
   for(const b of $('panelContent').querySelectorAll('[data-quest]'))b.onclick=()=>{if(!data.room)return notify('Сначала войди в сессию.');send({type:'quest',id:b.dataset.quest});resumeView()};
+  if($('currentQuestMap'))$('currentQuestMap').onclick=()=>openPanel('map');
+  if($('currentQuestAbandon'))$('currentQuestAbandon').onclick=()=>requestAbandonQuest();
  }else if(kind==='appearance'){
   const current=data.profile.color;
   setPanel('Окрас животного','ВНЕШНОСТЬ / КОСМЕТИКА',`<p class="muted">Окрас меняет только внешний вид и не даёт дополнительной силы. Выбери природный оттенок. Первоначальный цвет при регистрации бесплатный; последующие изменения стоят 65 Claws. Внутри сессии окрас меняется только в безопасной зоне.</p><div class="panel-grid coat-grid">${COATS.map(([name,hex])=>{const color=rgbToInt(hex),selected=color===current;return `<div class="item-card coat-card"><span class="coat-swatch" style="background:${hex}"></span><h3>${name}</h3><p>${selected?'Твой нынешний окрас':'Новый облик для твоего животного'}</p><button class="${selected?'secondary':'primary'}" data-coat="${color}" ${selected||data.wallet<65?'disabled':''}>${selected?'Выбран':'Изменить · 65 Claws'}</button></div>`}).join('')}</div>`);
@@ -244,7 +252,8 @@ function openPanel(kind){
  }else if(kind==='history'){
   setPanel('Твой след','ПРОФИЛЬ / CLAWS',`<div class="panel-grid"><div class="item-card"><span class="badge">УРОВЕНЬ ${data.profile.level}</span><h3>${escapeHtml(data.profile.nickname)}</h3><p>${escapeHtml(speciesByCode(data.profile.selected_species)?.title||'')} · Опыт ${fmt(data.profile.xp)} · Репутация ${data.profile.reputation}</p></div><div class="item-card"><span class="badge">КОШЕЛЁК</span><h3>${fmt(data.wallet)} Claws</h3><p>Заработаны внутри саванны. Реальных денег здесь нет.</p></div></div><h3 class="panel-section-title">Последние операции</h3><div class="panel-list">${data.ledger.map(l=>`<div class="panel-row"><div>${escapeHtml(l.reason)}<br><small>${new Date(l.created_at).toLocaleString('ru-RU')}</small></div><strong class="${l.delta>0?'tag':''}">${l.delta>0?'+':''}${fmt(l.delta)} Claws</strong></div>`).join('')||'<p class="muted">Здесь появятся первые операции.</p>'}</div>`);
  }else if(kind==='map'){
-  setPanel('Карта саванны','ЗЕМЛИ / 15 ЛОКАЦИЙ',`<p class="muted">Точки показывают места из исходной карты, включая Чужеземье и вулкан. Нажми на карту, чтобы поставить личный ориентир.</p><canvas id="mapCanvas" class="map-canvas" width="700" height="700"></canvas>`);
+  const goal=data.questAim;
+  setPanel('Карта саванны','ЗЕМЛИ / 15 ЛОКАЦИЙ',`<p class="muted">${goal?`Твоя текущая цель — ${escapeHtml(goal.label)}. Золотая метка показывает, куда идти. `:''}Зелёные точки — лечебные травы, красные — опасные гиены. Нажми на карту, чтобы поставить свой ориентир.</p><canvas id="mapCanvas" class="map-canvas" width="700" height="700"></canvas>`);
   const c=$('mapCanvas'),ctx=c.getContext('2d');drawMap(ctx,700,true);c.onclick=e=>{const r=c.getBoundingClientRect();scene.waypoint={x:(e.clientX-r.left)/r.width*700-350,z:(e.clientY-r.top)/r.height*700-350};notify('Ориентир установлен.');drawMap(ctx,700,true)};
  }else if(kind==='players'){
   const players=[...data.playerObjects.values()].filter(p=>p.id!==data.me);
@@ -269,12 +278,34 @@ function openPanel(kind){
  }
 }
 function updateObjective(){
- const q=data.serverQuest,names={rafiki:'Травы для Рафики',fuli:'Следопыт Фули',kion:'Патруль Кайона'};
- let text=q&&!q.completed?(names[q.id]||'Поручение')+' · '+q.progress+' / '+q.total:'Найди травы, поговори с друзьями или выбери поручение.';
+ const q=data.serverQuest,box=$('hudObjective');
+ const guide=describeQuest(q,data.serverQuests,data.resources,data.npcObjects,data.playerObjects.get(data.me));
+ data.questAim=guide?.target||null;
+ box.classList.toggle('has-quest',!!guide);
  const party=data.party?.operation;
- if(party&&party.stage!=='completed')text+='   |   Команда · '+party.stageName+' · '+party.progress+'/'+party.total;
- $('hudObjective').textContent=text;
+ if(guide){
+  const percent=Math.round(100*guide.progress/Math.max(1,guide.total));
+  box.innerHTML=`<div class="quest-tracker-label">ТЕКУЩЕЕ ПОРУЧЕНИЕ</div><div class="quest-tracker-title">${escapeHtml(guide.title)}</div><div class="quest-tracker-step">${escapeHtml(guide.step)}</div><div class="quest-tracker-progress"><span style="width:${percent}%"></span></div><div class="quest-tracker-meta"><span>${guide.progress} из ${guide.total}${guide.target?' · <b id="questDistance">Ищем направление…</b>':''}</span><span>+${fmt(guide.reward)} Claws</span></div>${party&&party.stage!=='completed'?`<small class="quest-tracker-party">Команда — ${escapeHtml(party.stageName)} · ${party.progress}/${party.total}</small>`:''}<div class="quest-tracker-actions"><button type="button" data-quest-action="map">Карта</button><button type="button" data-quest-action="abandon">Отказаться</button></div>`;
+  refreshObjectiveDistance();
+ }else{
+  box.innerHTML=`<div class="quest-tracker-label">СВОБОДЕН ОТ ПОРУЧЕНИЙ</div><div class="quest-tracker-empty">Поговори с Фули, Кайоном или Рафики, чтобы получить задание.</div><div class="quest-tracker-actions"><button type="button" data-quest-action="browse">Выбрать поручение</button></div>`;
+ }
 }
+function refreshObjectiveDistance(){
+ const node=$('questDistance'),pos=data.playerObjects.get(data.me),distance=questDistance(data.questAim,pos);
+ const threshold=data.serverQuest?.id==='fuli'?23:data.serverQuest?.id==='rafiki'?5.5:5;
+ if(node)node.textContent=distance==null?'Цель на карте':distance<threshold?'Ты у цели':`До цели ${distance} м`;
+}
+function requestAbandonQuest(){
+ if(!data.serverQuest||data.serverQuest.completed)return;
+ if(confirm('Отказаться от «'+(data.serverQuests?.[data.serverQuest.id]?.title||'поручения')+'»? Весь прогресс этого поручения пропадёт.'))send({type:'quest_abandon'});
+}
+$('hudObjective').addEventListener('click',event=>{
+ const action=event.target.closest('[data-quest-action]')?.dataset.questAction;
+ if(action==='map')openPanel('map');
+ if(action==='browse')openPanel('quests');
+ if(action==='abandon')requestAbandonQuest();
+});
 function appendChat(m){const box=$('chatHistory'),row=document.createElement('div'),author=document.createElement('b');row.className='chat-line';author.textContent=m.author+': ';row.append(author,document.createTextNode(m.body));box.append(row);while(box.children.length>45)box.firstChild.remove();box.scrollTop=box.scrollHeight}
 function renderDirectHistory(){
  const box=$('dmHistory');if(!box)return;box.replaceChildren();
@@ -435,11 +466,12 @@ class Scene {
    if(id===data.me&&inGame){
     const input=currentInputState(),walkSpeed=Number(speciesByCode(data.profile?.selected_species)?.speed)||8;
     this.localVelocity=smoothInputVelocity(this.localVelocity||{x:0,z:0},input,walkSpeed*(input.sprint?1.5:1),dt);
-    const visual=predictedDisplayTarget(t,this.localVelocity,(now-e.lastNet)/1000);
-    if(Math.hypot(visual.x-e.x,visual.z-e.z)>15){e.x=t.x;e.z=t.z;this.localVelocity={x:0,z:0}}
-    else{const k=1-Math.exp(-dt*28);e.x=S.lerp(e.x,visual.x,k);e.z=S.lerp(e.z,visual.z,k)}
+    const visual=reconcilePredictedPosition(e,t,this.localVelocity,(now-e.lastNet)/1000,dt);
+    e.x=visual.x;e.z=visual.z;
+    const desiredHeading=Math.hypot(input.x,input.z)>.08?Math.atan2(input.x,input.z):t.heading??e.heading;
+    e.heading=smoothHeading(e.heading,desiredHeading,dt);
    }else{const k=1-Math.exp(-dt*10);e.x=S.lerp(e.x,t.x,k);e.z=S.lerp(e.z,t.z,k)}
-   e.heading=t.heading??(Math.atan2(e.x-oldX,e.z-oldZ)||e.heading);
+   if(id!==data.me||!inGame)e.heading=smoothHeading(e.heading,t.heading??(Math.atan2(e.x-oldX,e.z-oldZ)||e.heading),dt);
    e.vx=(e.x-oldX)/Math.max(dt,.01);e.vz=(e.z-oldZ)/Math.max(dt,.01);
    const water=this.world.waterAt(e.x,e.z);
    e.swimming=!!water&&t.jump!==true;
@@ -469,7 +501,8 @@ class Scene {
     const mode=data.wanted>=2?'chase':data.wanted>0?'tension':data.party?.operation?.stage==='hunt'&&foes?'battle':action&&data.serverQuest.id==='kion'&&foes?'battle':action&&data.serverQuest.id==='fuli'&&speed>7?'chase':foes?'tension':'none';sound.setMusic(mode);
     if(data.roomWeather===5&&now>this.thunderAt){this.thunderAt=now+26000+Math.random()*16000;sound.play('thunder','ambience',{volume:.62})}
    }
-   if(this.time-this.mapLast>0.2||!this.mapLast){this.mapLast=this.time;drawMap($('minimap').getContext('2d'),180,false)}
+   if(this.time-(this.questGuideAt||0)>.8){this.questGuideAt=this.time;if(data.serverQuest){const guide=describeQuest(data.serverQuest,data.serverQuests,data.resources,data.npcObjects,me);if(guide?.target?.key!==data.questAim?.key)updateObjective();else if(guide?.target)data.questAim=guide.target}}
+   if(this.time-this.mapLast>0.2||!this.mapLast){this.mapLast=this.time;refreshObjectiveDistance();drawMap($('minimap').getContext('2d'),180,false)}
   }else{
    if(sound.musicMode!=='none')sound.setMusic('none');sound.setWaterDistance(Infinity);
    const t=this.time*.032;const target=new T.Vector3(-40+Math.sin(t)*40,14+Math.sin(t*.7)*3,20);
@@ -485,8 +518,11 @@ function drawMap(ctx,size,large){
  const scale=size/700,x=v=>(v+350)*scale,z=v=>(v+350)*scale;
  ctx.strokeStyle='#755637';ctx.lineWidth=large?6:2;for(const path of [[-105,-98,-45,0],[-45,0,76,26],[-45,0,-104,92],[76,26,140,-130],[140,-130,262,-280],[-104,92,30,155]]){ctx.beginPath();ctx.moveTo(x(path[0]),z(path[1]));ctx.lineTo(x(path[2]),z(path[3]));ctx.stroke()}
  for(const l of S.LOCATIONS){ctx.beginPath();ctx.fillStyle='#a97748';ctx.arc(x(l.x),z(l.z),large?5:2,0,Math.PI*2);ctx.fill();if(large){ctx.fillStyle='#e7c69c';ctx.font='11px Manrope,Arial';ctx.fillText(l.name,x(l.x)+9,z(l.z)+4)}}
+ for(const r of data.resources.values()){if(r.type!=='herb')continue;ctx.beginPath();ctx.fillStyle=Date.now()>=Number(r.readyAt||0)?'#8dbf7c':'#5e7059';ctx.arc(x(r.x),z(r.z),large?5:2.3,0,Math.PI*2);ctx.fill()}
+ for(const enemy of data.npcObjects.values()){if(!enemy.id.startsWith('hyena-')||enemy.hp<=0||!enemy.model.visible)continue;ctx.beginPath();ctx.fillStyle='#d36d52';ctx.arc(x(enemy.x),z(enemy.z),large?5:2.3,0,Math.PI*2);ctx.fill()}
  const me=data.playerObjects.get(data.me);if(me){ctx.beginPath();ctx.fillStyle='#f7c783';ctx.arc(x(me.x),z(me.z),large?8:4,0,Math.PI*2);ctx.fill()}
  for(const [id,p] of data.playerObjects)if(id!==data.me){ctx.fillStyle='#d6e2e0';ctx.fillRect(x(p.x)-2,z(p.z)-2,4,4)}
+ if(data.questAim){const aim=data.questAim;ctx.save();if(me){ctx.beginPath();ctx.setLineDash(large?[8,7]:[3,3]);ctx.strokeStyle='#e9bd75bb';ctx.lineWidth=large?2:1;ctx.moveTo(x(me.x),z(me.z));ctx.lineTo(x(aim.x),z(aim.z));ctx.stroke()}ctx.setLineDash([]);ctx.beginPath();ctx.strokeStyle='#ffe4a9';ctx.lineWidth=large?4:2;ctx.arc(x(aim.x),z(aim.z),large?12:6,0,Math.PI*2);ctx.stroke();ctx.fillStyle='#f5ab45';ctx.beginPath();ctx.arc(x(aim.x),z(aim.z),large?6:3,0,Math.PI*2);ctx.fill();if(large){ctx.fillStyle='#ffe4b5';ctx.font='bold 14px Manrope,Arial';ctx.fillText(aim.label,x(aim.x)+16,z(aim.z)-14)}ctx.restore()}
  if(scene.waypoint){ctx.strokeStyle='#ffba66';ctx.lineWidth=2;ctx.strokeRect(x(scene.waypoint.x)-5,z(scene.waypoint.z)-5,10,10)}
 }
 
@@ -499,15 +535,18 @@ function updateTouchMove(e){
  const box=touchStick.getBoundingClientRect(),radius=Math.min(box.width,box.height)*.32;
  const dx=e.clientX-box.left-box.width/2,dy=e.clientY-box.top-box.height/2;
  const distance=Math.hypot(dx,dy),scale=distance>radius?radius/distance:1;
- touchMove.x=dx*scale/radius;touchMove.y=-dy*scale/radius;
+ const magnitude=Math.min(1,distance/radius),deadzone=.11;
+ const strength=magnitude<=deadzone?0:Math.pow((magnitude-deadzone)/(1-deadzone),1.08);
+ touchMove.x=distance?dx/distance*strength:0;touchMove.y=distance?-dy/distance*strength:0;
  touchKnob.style.transform=`translate(${Math.round(dx*scale)}px,${Math.round(dy*scale)}px)`;
+ sendCurrentInput();
 }
 touchStick.addEventListener('pointerdown',e=>{
  if(touchMovePointer!==null)return;
  e.preventDefault();touchMovePointer=e.pointerId;touchStick.setPointerCapture(e.pointerId);updateTouchMove(e);
 });
 touchStick.addEventListener('pointermove',e=>{if(e.pointerId===touchMovePointer){e.preventDefault();updateTouchMove(e)}});
-for(const event of ['pointerup','pointercancel','lostpointercapture'])touchStick.addEventListener(event,e=>{if(e.pointerId===touchMovePointer)resetTouchMove()});
+for(const event of ['pointerup','pointercancel','lostpointercapture'])touchStick.addEventListener(event,e=>{if(e.pointerId===touchMovePointer){resetTouchMove();sendCurrentInput()}});
 addEventListener('keydown',e=>{
  if(e.target.closest('input,select,textarea'))return;
  if(!$('dialogueBox').classList.contains('hidden')){if(e.code==='Escape')closeDialogue();return}
@@ -518,21 +557,22 @@ addEventListener('keydown',e=>{
  if(e.code==='KeyE'&&data.room)scene.gather();
  if(e.code==='KeyF'&&data.room&&first)scene.ability();
  if(e.code==='KeyR'&&data.room&&first)scene.talk();
+ if(['KeyW','KeyA','KeyS','KeyD','ShiftLeft','ShiftRight','Space'].includes(e.code))sendCurrentInput();
 });
-addEventListener('keyup',e=>keys.delete(e.code));addEventListener('blur',()=>{keys.clear();mobile.clear();resetTouchMove();jumpQueued=false;$('mobileSprint').classList.remove('is-active');$('mobileSprint').setAttribute('aria-pressed','false')});
+addEventListener('keyup',e=>{keys.delete(e.code);sendCurrentInput()});addEventListener('blur',()=>{keys.clear();mobile.clear();resetTouchMove();jumpQueued=false;$('mobileSprint').classList.remove('is-active');$('mobileSprint').setAttribute('aria-pressed','false');sendCurrentInput()});
 for(const b of document.querySelectorAll('[data-move]')){
  const code={up:'KeyW',down:'KeyS',left:'KeyA',right:'KeyD'}[b.dataset.move];
- b.addEventListener('pointerdown',e=>{e.preventDefault();mobile.add(code);b.setPointerCapture(e.pointerId)});
- for(const ev of ['pointerup','pointercancel','lostpointercapture'])b.addEventListener(ev,()=>mobile.delete(code));
+ b.addEventListener('pointerdown',e=>{e.preventDefault();mobile.add(code);b.setPointerCapture(e.pointerId);sendCurrentInput()});
+ for(const ev of ['pointerup','pointercancel','lostpointercapture'])b.addEventListener(ev,()=>{mobile.delete(code);sendCurrentInput()});
 }
 function holdMobileButton(id,code,onPress){
  const button=$(id);let activePointer=null;
  button.addEventListener('pointerdown',e=>{
   if(activePointer!==null)return;
-  e.preventDefault();activePointer=e.pointerId;mobile.add(code);button.setPointerCapture(e.pointerId);if(onPress)onPress();
+  e.preventDefault();activePointer=e.pointerId;mobile.add(code);button.setPointerCapture(e.pointerId);if(onPress)onPress();else sendCurrentInput();
  });
  for(const event of ['pointerup','pointercancel','lostpointercapture'])button.addEventListener(event,e=>{
-  if(e.pointerId===activePointer){activePointer=null;mobile.delete(code)}
+  if(e.pointerId===activePointer){activePointer=null;mobile.delete(code);sendCurrentInput()}
  });
 }
 const sprintButton=$('mobileSprint');
@@ -542,6 +582,7 @@ sprintButton.onclick=()=>{
  if(active)mobile.add('ShiftLeft');else mobile.delete('ShiftLeft');
  sprintButton.classList.toggle('is-active',active);
  sprintButton.setAttribute('aria-pressed',String(active));
+ sendCurrentInput();
 };
 holdMobileButton('mobileJump','Space',()=>{jumpQueued=true;sendCurrentInput(true)});
 $('mobileJump').onclick=e=>{if(e.detail===0){jumpQueued=true;sendCurrentInput(true)}};
@@ -560,11 +601,13 @@ function currentInputState(){
 }
 function sendCurrentInput(forceJump=false){
  if(!data.room||data.view!=='hud'||!data.ws||data.ws.readyState!==WebSocket.OPEN)return;
+ const now=performance.now();if(!forceJump&&now-(sendCurrentInput.lastAt||0)<33)return;
+ sendCurrentInput.lastAt=now;
  const input=currentInputState();
  send({type:'input',...input,jump:forceJump||jumpQueued||input.jump});
  if(!forceJump)jumpQueued=false;
 }
-setInterval(()=>sendCurrentInput(),65);
+setInterval(()=>sendCurrentInput(),45);
 
 async function bootstrap(){
  $('loadProgress').style.width='20%';$('loadLabel').textContent='Восстанавливаем земли прайда…';

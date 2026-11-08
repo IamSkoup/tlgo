@@ -63,6 +63,7 @@ export class GameCore {
       case 'gather':return this.gather(peer,cleanText(msg.id,32));
       case 'interact':return this.interact(peer,cleanText(msg.contact,32));
       case 'quest':return this.quest(peer,cleanText(msg.id,32));
+      case 'quest_abandon':return this.abandonQuest(peer);
       case 'chat':return this.chat(peer,msg);
       case 'chat_history':return this.chatHistory(peer,msg.scope);
       case 'dm_history':return this.dmHistory(peer,cleanText(msg.userId,64));
@@ -198,6 +199,16 @@ export class GameCore {
     p.quest=id;p.questProgress=prior.find(x=>x.quest_id===id)?.progress||0;p.visitIndex=p.questProgress;
     await this.store.setQuest(p.id,id,p.questProgress,'active');
     this.emit(peer,{type:'quest_state',id,progress:p.questProgress,total:q.count});
+  }
+  async abandonQuest(peer){
+    const p=peer.player;
+    if(!p||!p.quest)return this.error(peer,'У тебя нет активного поручения.');
+    const id=p.quest;
+    const removed=await this.store.abandonQuest(p.id,id);
+    if(!removed?.length)return this.error(peer,'Поручение уже завершено или отменено.');
+    p.quest=null;p.questProgress=0;p.visitIndex=0;
+    this.emit(peer,{type:'quest_state',id,progress:0,total:QUESTS[id].count,abandoned:true});
+    await this.refresh(peer);
   }
   async progressQuest(p,kind){
     if(!p.quest||QUESTS[p.quest].kind!==kind)return;
@@ -437,7 +448,7 @@ export class GameCore {
         const input=p.input;let speed=p.speed;
         if(now<p.abilityUntil)speed*=1.23;
         if(input.sprint&&p.stamina>1){speed*=1.5;p.stamina=Math.max(0,p.stamina-15*dt)}else p.stamina=Math.min(p.maxStamina,p.stamina+11*dt);
-        const accel=Math.min(1,dt*9);p.vx+=(input.x*speed-p.vx)*accel;p.vz+=(input.z*speed-p.vz)*accel;
+        const accel=Math.min(1,dt*(Math.hypot(input.x,input.z)>.04?16:24));p.vx+=(input.x*speed-p.vx)*accel;p.vz+=(input.z*speed-p.vz)*accel;
         const position=resolveTerrain(p.x+p.vx*dt,p.z+p.vz*dt);
         p.x=position.x;p.z=position.z;
         if(Math.hypot(input.x,input.z)>.1)p.heading=Math.atan2(input.x,input.z);

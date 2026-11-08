@@ -36,3 +36,22 @@ em{font-family:'Playfair Display',Georgia,serif;font-style:italic;color:var(--go
 .death-content p{font-size:clamp(15px,2.4vw,24px);font-weight:700;color:#ededed;margin:10px 0 22px}
 .death-content span{display:block;font-size:clamp(12px,1.3vw,16px);color:#c9c9ca;letter-spacing:.06em}
 @keyframes deathAppear{from{opacity:0;filter:blur(10px)}to{opacity:1;filter:blur(0)}}
+
+/* Persistent quest tracker, visually separate from the HUD controls. */
+#hudObjective{width:min(385px,40vw);max-width:calc(100vw - 28px);padding:13px 17px 12px;text-align:left;border:1px solid #b8875680;border-left:3px solid #e5a65c;border-radius:11px;background:linear-gradient(135deg,#291b13ef,#17130fe8);box-shadow:0 10px 36px #0008;backdrop-filter:blur(7px);pointer-events:auto;z-index:5;color:#f5e5ce;line-height:1.4}
+#hudObjective:not(.has-quest){width:min(295px,33vw);padding:10px 14px}
+.quest-tracker-label{color:#d8aa74;font-size:9px;font-weight:900;letter-spacing:.17em;margin-bottom:5px}
+.quest-tracker-title{font:700 clamp(17px,1.3vw,22px) 'Playfair Display',Georgia,serif;line-height:1.22;color:#ffe3b8}
+.quest-tracker-step{font-size:12px;line-height:1.45;color:#e9d7c0;margin:8px 0 10px}
+.quest-tracker-progress{height:5px;border-radius:8px;background:#76503971;overflow:hidden;margin:8px 0}
+.quest-tracker-progress span{display:block;height:100%;border-radius:8px;background:linear-gradient(90deg,#b77946,#f4c179);transition:width .3s ease}
+.quest-tracker-meta{display:flex;justify-content:space-between;gap:9px;color:#d4b898;font-size:10px;flex-wrap:wrap}
+.quest-tracker-meta b{font-weight:900;color:#ffdc9d}
+.quest-tracker-party{display:block;color:#c9b6a0;margin-top:7px}
+.quest-tracker-actions,.quest-panel-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.quest-tracker-actions button{padding:7px 12px;border-radius:7px;background:#533724c7;border:1px solid #c798625e;color:#ffdfb5;font-size:10px;font-weight:800;cursor:pointer;touch-action:manipulation}
+.quest-tracker-actions button:focus-visible{outline:2px solid #f0ba78;outline-offset:2px}
+.quest-tracker-actions button:hover{background:#785030}
+.quest-tracker-actions button[data-quest-action="abandon"]{background:#31241e;border-color:#825847;color:#d5b4a2}
+.quest-tracker-empty{color:#d9c4ae;font-size:11px;line-height:1.5}
+.quest-current{border-color:#d4a46e85}

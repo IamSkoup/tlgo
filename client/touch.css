@@ -91,3 +91,28 @@
  #hudObjective{bottom:8px;max-width:27vw;font-size:10px}
  #toastHolder{top:50px}
 }
+
+/* Compact tracker in phone landscape, readable above the sticks in portrait. */
+@media(pointer:coarse){
+ #hudObjective{width:min(355px,35vw);max-width:min(355px,35vw);padding:9px 11px 8px;text-align:left;pointer-events:auto}
+ #hudObjective:not(.has-quest){width:min(270px,30vw)}
+ .quest-tracker-label{font-size:8px;margin-bottom:3px}
+ .quest-tracker-title{font-size:15px}
+ .quest-tracker-step{font-size:10px;margin:5px 0 6px}
+ .quest-tracker-progress{margin:6px 0;height:4px}
+ .quest-tracker-meta{font-size:9px}
+ .quest-tracker-actions{margin-top:6px}
+ .quest-tracker-actions button{padding:6px 9px;font-size:9px}
+}
+@media(pointer:coarse) and (orientation:portrait){
+ #hudObjective{width:min(330px,calc(100vw - 26px));max-width:min(330px,calc(100vw - 26px));bottom:calc(env(safe-area-inset-bottom) + 218px)}
+ #hudObjective:not(.has-quest){width:min(280px,calc(100vw - 30px))}
+}
+@media(pointer:coarse) and (max-height:380px){
+ #hudObjective{width:29vw;max-width:29vw;bottom:6px;padding:6px 9px}
+ #hudObjective:not(.has-quest){width:25vw}
+ .quest-tracker-step{max-height:30px;overflow:hidden;margin:3px 0}
+ .quest-tracker-party,.quest-tracker-progress{display:none}
+ .quest-tracker-actions{margin-top:4px}
+ .quest-tracker-actions button{padding:4px 7px}
+}
