@@ -16,6 +16,16 @@ export class FakeStore {
   async savePosition(id,x,z,heading){this.positions.set(id,{x,z,heading})}
   async createProfile(id,nickname,species){if(this.players.has(id))throw Error('Already created');if([...this.players.values()].some(p=>p.nickname.toLowerCase()===nickname.toLowerCase()))throw Error('Nickname used');if(!this.speciesList.some(s=>s.code===species&&s.starter))throw Error('Not starter');this.add(id,nickname,species)}
   async reward(id,delta,reason,key,xp=0){const ledger=this.ledgers.get(id);if(ledger.has(key))return {balance:this.wallets.get(id),awarded:false};const next=this.wallets.get(id)+delta;if(next<0)throw Error('Insufficient balance');this.wallets.set(id,next);ledger.set(key,{delta,reason,event_key:key});this.players.get(id).xp+=xp;return {balance:next,awarded:true}}
+  async deathPenalty(id,eventKey){
+    const ledger=this.ledgers.get(id),balance=this.wallets.get(id);
+    if(ledger.has(eventKey))return {amount:0,balance,charged:false};
+    const amount=Math.round(balance*.035);
+    if(!amount)return {amount:0,balance,charged:false};
+    const next=balance-amount;
+    this.wallets.set(id,next);
+    ledger.set(eventKey,{delta:-amount,reason:'Потеря Claws при гибели',event_key:eventKey});
+    return {amount,balance:next,charged:true};
+  }
   async finishQuest(id,quest){const values={rafiki:[75,65,3],fuli:[95,80,2],kion:[130,110,2]},entry=this.questMap.get(id).find(q=>q.quest_id===quest&&q.state==='active');if(!entry)throw Error('No active quest');const [reward,xp,count]=values[quest];const result=await this.reward(id,reward,'Quest '+quest,'quest:'+quest,xp);await this.setQuest(id,quest,count,'completed');return result}
   async purchase(id,species){const s=this.speciesList.find(x=>x.code===species&&!x.starter);if(!s)throw Error('Cannot purchase');if(this.ownedMap.get(id).some(x=>x.species===species))throw Error('Already owned');await this.reward(id,-s.price,'Animal','species:'+species);this.ownedMap.get(id).push({species,power_rank:0,endurance_rank:0});}
   async recolor(id,color){if(![14001235,12945995,12034442,9929066,9867403,14999502,6969670,14200949].includes(color))throw Error('Invalid pigment');const profile=this.players.get(id);if(profile.color===color)throw Error('Already selected');const balance=await this.reward(id,-65,'New coat','coat:'+color+':'+this.ledgers.get(id).size);profile.color=color;return balance.balance}

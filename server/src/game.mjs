@@ -161,7 +161,7 @@ export class GameCore {
       x:clamp(Number(saved?.x) || SPAWN.x,-MAX_COORD,MAX_COORD),z:clamp(Number(saved?.z)||SPAWN.z,-MAX_COORD,MAX_COORD),
       heading:0,vx:0,vz:0,hp:species.hp,maxHp:species.hp,stamina:species.stamina,maxStamina:species.stamina,
       power:species.power,speed:Number(species.speed),input:{x:0,z:0,sprint:false,jump:false},jumpUntil:0,
-      pvp:false,lastAttack:0,abilityUntil:0,abilityCooldown:0,wanted:0,lastCrime:0,wantedDecayAt:0,peer,quest:null,questProgress:0,visitIndex:0,deathUntil:0,level:peer.playerProfile.level};
+      pvp:false,lastAttack:0,abilityUntil:0,abilityCooldown:0,wanted:0,lastCrime:0,wantedDecayAt:0,nextGuardWave:0,deathCount:0,peer,quest:null,questProgress:0,visitIndex:0,deathUntil:0,level:peer.playerProfile.level};
     const ranks=(await this.store.owned(peer.user.id)).find(o=>o.species===species.code);this.resetPlayer(p,species,ranks);
     const unfinished=(await this.store.quests(peer.user.id)).find(q=>q.state==='active'&&QUESTS[q.quest_id]);
     if(unfinished){p.quest=unfinished.quest_id;p.questProgress=Math.min(QUESTS[p.quest].count,unfinished.progress);p.visitIndex=p.questProgress}
@@ -225,7 +225,7 @@ export class GameCore {
   async interact(peer,id){
     const p=peer.player,contact=CONTACTS[id];
     if(!p||!contact)return this.error(peer,'Здесь не с кем разговаривать.');
-    if(distance(p,contact)>11)return this.error(peer,'Подойди ближе к собеседнику.');
+    if(distance(p,contact)>16)return this.error(peer,'Подойди ближе к собеседнику.');
     if(!this.rate(peer,'interact',600))return;
     const records=contact.quest?await this.store.quests(p.id):[];
     const complete=records.some(q=>q.quest_id===contact.quest&&q.state==='completed');
@@ -310,7 +310,7 @@ export class GameCore {
   }
   async attack(peer,target){
     const p=peer.player,room=peer.room;if(!p||p.hp<=0)return;
-    const now=this.clock();if(now-p.lastAttack<650||p.stamina<9)return;
+    const now=this.clock();if(now-p.lastAttack<950||p.stamina<9)return;
     const n=room.npcs.get(target),other=room.players.get(target),victim=n||other;
     if(!victim||victim.hp<=0||(n&&n.deadUntil>now)||distance(p,victim)>5)return;
     if(other&&(safe(p)||safe(other)||!p.pvp||!other.pvp))return this.error(peer,'PvP доступен по согласию вне безопасных зон.');
@@ -324,9 +324,9 @@ export class GameCore {
       if(!n.hostile){p.wanted=clamp(p.wanted+1,0,5);p.lastCrime=now;p.wantedDecayAt=now+30000;this.emit(peer,{type:'wanted',level:p.wanted,message:'Нападение замечено стражей.'});}
     }
     if(victim.hp<=0){
-      if(other){other.deathUntil=now+4500;this.emit(other.peer,{type:'dead',seconds:4});}
+      if(other)this.killPlayer(other,now);
       else{
-        n.deadUntil=now+90000;n.spawn++;n.aggro=null;
+        n.deadUntil=now+65000;n.spawn++;n.aggro=null;
         if(!n.hostile) await this.store.adjustReputation(p.id,-5);
         for(const [user,contribution] of n.damage){
           const winner=room.players.get(user);if(winner&&contribution>=12&&distance(winner,n)<70){
@@ -394,13 +394,44 @@ export class GameCore {
     const rows=await this.store.directHistory(peer.user.id,otherId);
     this.emit(peer,{type:'dm_history',with:otherId,nickname:friend.other.nickname,rows});
   }
+  killPlayer(p,now){
+    if(p.deathUntil>now)return;
+    p.deathUntil=now+5000;p.input={x:0,z:0,sprint:false,jump:false};
+    this.emit(p.peer,{type:'dead',seconds:5});
+    const death=++p.deathCount;
+    this.chargeDeath(p,death).catch(error=>this.log.error('death penalty',error.message));
+  }
+  async chargeDeath(p,death){
+    const result=await this.store.deathPenalty(p.id,`death:${p.peer.room?.epoch||'room'}:${p.id}:${death}`);
+    this.emit(p.peer,{type:'death_penalty',amount:result.amount||0,balance:result.balance});
+    await this.refresh(p.peer);
+  }
+  callGuards(room,p,now){
+    if(p.wanted<=0||p.hp<=0||safe(p)||now<p.nextGuardWave)return;
+    const nearby=[...room.npcs.values()].filter(n=>n.guard&&now>=n.deadUntil&&distance(n,p)<90);
+    if(nearby.length>=2)return;
+    let called=0;
+    for(let i=0;i<3&&nearby.length+called<2;i++){
+      const id=`guard-${p.id}-${i}`;
+      const old=room.npcs.get(id);
+      if(old&&now>=old.deadUntil&&distance(old,p)<90)continue;
+      if(old&&now<old.deadUntil)continue;
+      const angle=(now/3300+i*2.8)%(Math.PI*2),radius=23+i*5;
+      const point=resolveTerrain(p.x+Math.cos(angle)*radius,p.z+Math.sin(angle)*radius,1);
+      room.npcs.set(id,{id,name:'Страж дозора',species:'lion',x:point.x,z:point.z,
+        home:{x:point.x,z:point.z},hp:220,maxHp:220,hostile:false,guard:true,reinforcement:true,
+        wantedId:p.id,spawnedAt:now,deadUntil:0,spawn:0,aggro:p.id,damage:new Map(),vx:0,vz:0});
+      called++;
+    }
+    if(called){p.nextGuardWave=now+11000;this.emit(p.peer,{type:'notice',message:'Стража заметила тебя и вышла на перехват.'});}
+  }
   tick(dt=1/TICK_RATE){
     this.tickCount++;
     const now=this.clock();
     for(const room of this.rooms.values()){
       if(now-room.weatherChangedAt>180000){room.weatherChangedAt=now;room.weather=(room.weather+1+Math.floor(Math.random()*3))%8;this.broadcast(room,{type:'weather',index:room.weather})}
       for(const p of room.players.values()){
-        if(p.hp<=0){if(now>=p.deathUntil){p.x=SPAWN.x;p.z=SPAWN.z;p.hp=p.maxHp;p.stamina=p.maxStamina;p.wanted=0;p.input={x:0,z:0,sprint:false,jump:false};this.emit(p.peer,{type:'respawn'});}continue;}
+        if(p.hp<=0){if(now>=p.deathUntil){p.x=SPAWN.x;p.z=SPAWN.z;p.hp=p.maxHp;p.stamina=p.maxStamina;p.wanted=0;p.deathUntil=0;p.input={x:0,z:0,sprint:false,jump:false};this.emit(p.peer,{type:'respawn'});}continue;}
         // A paused tab or opened menu cannot keep an old movement command active.
         if(now-p.peer.lastInputAt>500)p.input={x:0,z:0,sprint:false,jump:false};
         const input=p.input;let speed=p.speed;
@@ -417,23 +448,39 @@ export class GameCore {
           if(stop&&distance(p,stop)<23){p.visitIndex++;this.progressQuest(p,'visit').catch(e=>this.log.error(e));}
         }
       }
+      for(const p of room.players.values())this.callGuards(room,p,now);
+      for(const [id,n] of room.npcs){
+        if(!n.reinforcement)continue;
+        const wanted=room.players.get(n.wantedId);
+        if((!wanted||wanted.wanted===0||safe(wanted)||wanted.hp<=0)&&now-n.spawnedAt>4500)room.npcs.delete(id);
+      }
       for(const n of room.npcs.values()){
         if(n.deadUntil){if(now<n.deadUntil)continue;n.deadUntil=0;n.x=n.home.x;n.z=n.home.z;n.hp=n.maxHp;n.damage.clear();}
         if(n.guard){
-          const closest=[...room.players.values()].filter(p=>p.wanted>0&&!safe(p)&&p.hp>0&&distance(p,n)<75).sort((a,b)=>distance(a,n)-distance(b,n))[0];
+          const closest=[...room.players.values()].filter(p=>p.wanted>0&&!safe(p)&&p.hp>0&&distance(p,n)<(n.reinforcement?180:110)).sort((a,b)=>distance(a,n)-distance(b,n))[0];
           n.aggro=closest?.id||null;
+        }else if(n.hostile&&!room.players.get(n.aggro)){
+          const closest=[...room.players.values()].filter(p=>p.hp>0&&!safe(p)&&distance(p,n)<21).sort((a,b)=>distance(a,n)-distance(b,n))[0];
+          if(closest)n.aggro=closest.id;
         }
         let target=room.players.get(n.aggro);
         if(now<(n.stunnedUntil||0))continue;
-        if(target&&target.hp>0&&distance(n,target)<75&&(n.hostile||n.guard)){
-          const d=distance(n,target)||1,step=Math.min(4.2*dt,d);
-          n.vx=(target.x-n.x)/d*4.2;n.vz=(target.z-n.z)/d*4.2;n.x+=n.vx*dt;n.z+=n.vz*dt;
-          if(d<3.6&&now-(n.lastAttack||0)>1600){n.lastAttack=now;const power=n.guard?14:9;target.hp=Math.max(0,target.hp-power);this.broadcast(room,{type:'hit',from:n.id,target:target.id,damage:power,hp:target.hp});if(!target.hp){target.deathUntil=now+4500;this.emit(target.peer,{type:'dead',seconds:4});}}
+        if(target&&target.hp>0&&!safe(target)&&distance(n,target)<(n.guard?180:75)&&(n.hostile||n.guard)){
+          const d=distance(n,target)||1,speed=n.guard?8.8:n.id==='hyena-6'?6.4:5.7;
+          n.vx=(target.x-n.x)/d*speed;n.vz=(target.z-n.z)/d*speed;
+          const position=resolveTerrain(n.x+n.vx*dt,n.z+n.vz*dt,1);
+          n.x=position.x;n.z=position.z;
+          if(d<3.6&&now-(n.lastAttack||0)>(n.guard?1200:1450)){
+            n.lastAttack=now;const power=n.guard?17:n.id==='hyena-6'?19:13;
+            target.hp=Math.max(0,target.hp-power);
+            this.broadcast(room,{type:'hit',from:n.id,target:target.id,damage:power,hp:target.hp});
+            if(!target.hp)this.killPlayer(target,now);
+          }
         }else{
           n.aggro=null;const phase=now/5000+n.home.x;
           n.vx=Math.sin(phase)*.9;n.vz=Math.cos(phase)*.9;
-          n.x=clamp(n.x+n.vx*dt,n.home.x-12,n.home.x+12);
-          n.z=clamp(n.z+n.vz*dt,n.home.z-12,n.home.z+12);
+          const position=resolveTerrain(clamp(n.x+n.vx*dt,n.home.x-12,n.home.x+12),clamp(n.z+n.vz*dt,n.home.z-12,n.home.z+12),1);
+          n.x=position.x;n.z=position.z;
         }
       }
       if(this.tickCount%(TICK_RATE/SNAPSHOT_RATE)===0){

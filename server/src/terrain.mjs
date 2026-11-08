@@ -39,6 +39,7 @@ export const TERRAIN_COLLIDERS=(()=>{
     random();random();random(); // Visible rock Euler rotation.
   }
   add(-112,-106,9);add(-102,-103,8);add(-109,96,3.8);
+  for(const [x,z,sx] of [[-236,209,8],[-248,197,6],[-221,218,5],[-175,-244,8],[-160,-256,7],[-129,-240,5],[288,187,8],[306,200,7],[292,169,6],[226,-252,8],[214,-266,6],[245,-283,7]])add(x,z,sx*.78);
   for(const [x,z] of [AREAS[0],AREAS[10],AREAS[12],AREAS[13]]){
     add(x-6,z-5,3);add(x+6,z-5,3);
   }

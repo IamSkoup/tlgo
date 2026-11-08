@@ -42,13 +42,25 @@ export const RESOURCES = [
   { id:'stone-a',x:-168,z:-188,type:'relic' },{ id:'stone-b',x:185,z:-191,type:'relic' }
 ];
 export const NPC_DEFS = [
-  {id:'guard-patrol',species:'lion',name:'Страж Скалы Прайда',x:-107,z:-64,hp:180,hostile:false,guard:true},
-  {id:'hyena-1',species:'hyena',name:'Дикая гиена',x:27,z:99,hp:75,hostile:true},
-  {id:'hyena-2',species:'hyena',name:'Дикая гиена',x:125,z:-102,hp:75,hostile:true},
-  {id:'hyena-3',species:'hyena',name:'Дикая гиена',x:202,z:-123,hp:85,hostile:true},
+  {id:'guard-patrol',species:'lion',name:'Страж Скалы Прайда',x:-107,z:-64,hp:220,hostile:false,guard:true},
+  {id:'guard-west',species:'lion',name:'Страж западных троп',x:-86,z:83,hp:220,hostile:false,guard:true},
+  {id:'guard-east',species:'lion',name:'Страж водопоя',x:94,z:58,hp:220,hostile:false,guard:true},
+  {id:'hyena-1',species:'hyena',name:'Дикая гиена',x:27,z:99,hp:160,hostile:true},
+  {id:'hyena-2',species:'hyena',name:'Дикая гиена',x:125,z:-102,hp:165,hostile:true},
+  {id:'hyena-3',species:'hyena',name:'Дикая гиена',x:202,z:-123,hp:175,hostile:true},
+  {id:'hyena-4',species:'hyena',name:'Гиена-разведчик',x:63,z:132,hp:145,hostile:true},
+  {id:'hyena-5',species:'hyena',name:'Дикая гиена',x:180,z:-162,hp:170,hostile:true},
+  {id:'hyena-6',species:'hyena',name:'Вожак гиен',x:254,z:-196,hp:230,hostile:true},
+  {id:'hyena-7',species:'hyena',name:'Дикая гиена',x:-193,z:-166,hp:155,hostile:true},
+  {id:'hyena-8',species:'hyena',name:'Дикая гиена',x:201,z:94,hp:160,hostile:true},
   {id:'gazelle-1',species:'gazelle',name:'Газель',x:43,z:111,hp:75,hostile:false},
+  {id:'gazelle-2',species:'gazelle',name:'Газель',x:-18,z:176,hp:75,hostile:false},
+  {id:'gazelle-3',species:'gazelle',name:'Газель',x:158,z:57,hp:75,hostile:false},
   {id:'zebra-1',species:'zebra',name:'Зебра',x:-118,z:167,hp:125,hostile:false},
-  {id:'warthog-1',species:'warthog',name:'Бородавочник',x:90,z:-74,hp:100,hostile:false}
+  {id:'zebra-2',species:'zebra',name:'Зебра',x:196,z:177,hp:125,hostile:false},
+  {id:'warthog-1',species:'warthog',name:'Бородавочник',x:90,z:-74,hp:100,hostile:false},
+  {id:'warthog-2',species:'warthog',name:'Бородавочник',x:-232,z:24,hp:100,hostile:false},
+  {id:'zebra-3',species:'zebra',name:'Зебра',x:-206,z:188,hp:125,hostile:false}
 ];
 export const distance = (a,b) => Math.hypot(a.x-b.x,a.z-b.z);
 export const safe = p => SAFE_ZONES.some(s => distance(p,s) < s.r);

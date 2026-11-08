@@ -24,3 +24,15 @@ em{font-family:'Playfair Display',Georgia,serif;font-style:italic;color:var(--go
 
 /* HUD readability without covering the left half of the world in brown. */
 .vignette{background:linear-gradient(0deg,rgba(16,12,10,.18),transparent 32%)}
+
+.talk-prompt{position:absolute;left:50%;bottom:111px;transform:translateX(-50%);z-index:3;max-width:calc(100vw - 24px);padding:13px 23px;border:1px solid #e4a567b0;border-radius:10px;background:#28170dec;box-shadow:0 8px 36px #0009,0 0 22px #c47c4536;color:#ffe2ba;font-size:15px;font-weight:800;line-height:1.3;text-align:center;white-space:nowrap;pointer-events:none;animation:talkPulse 1.4s ease-in-out infinite alternate}
+@keyframes talkPulse{to{box-shadow:0 9px 40px #000a,0 0 30px #e3a06569}}
+@media(pointer:coarse){.talk-prompt{top:36%;bottom:auto;font-size:12px;padding:10px 16px;white-space:normal;max-width:65vw}}
+
+.death-screen{position:fixed;inset:0;z-index:65;display:grid;place-items:center;background:linear-gradient(100deg,#25282ad9,#585a5cce 48%,#202226e5);backdrop-filter:grayscale(1) blur(3px);pointer-events:auto;animation:deathAppear .45s ease-out both}
+.death-content{width:min(720px,86vw);text-align:center;text-shadow:0 4px 9px #101014a9}
+.death-rule{height:1px;background:linear-gradient(90deg,transparent,#b8b8b8a8 25%,#b8b8b8a8 75%,transparent);margin:24px auto}
+.death-content h2{margin:6px 0 16px;font-family:Impact,'Arial Narrow',sans-serif;font-stretch:condensed;font-size:clamp(82px,15vw,184px);font-weight:900;letter-spacing:.075em;line-height:1;color:#b22224;text-shadow:0 4px 0 #4d080b,0 6px 25px #190b0be0}
+.death-content p{font-size:clamp(15px,2.4vw,24px);font-weight:700;color:#ededed;margin:10px 0 22px}
+.death-content span{display:block;font-size:clamp(12px,1.3vw,16px);color:#c9c9ca;letter-spacing:.06em}
+@keyframes deathAppear{from{opacity:0;filter:blur(10px)}to{opacity:1;filter:blur(0)}}

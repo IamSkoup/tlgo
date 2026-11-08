@@ -87,7 +87,17 @@ S.animal=(species,id='',color)=>{
  else if(gir)root.scale.setScalar(1.15);
  root.userData={...root.userData,legs,tail,head,baseHead:hy,species};return root;
 };
-S.animateAnimal=(e,t,dt)=>{const m=e.model,d=m.userData;const v=Math.hypot(e.vx||0,e.vz||0);const gait=v>.3?Math.sin(t*(v>12?13:8)+e.seed):0;for(let i=0;i<4;i++)d.legs[i].rotation.x=gait*(i===0||i===3?1:-1)*(v>12?.75:.48);if(e.attackAnim>0)d.legs[0].rotation.x=-1.4;d.tail.rotation.y=Math.sin(t*2+e.seed)*.22;d.head.rotation.x=e.state==='EAT'?.4:e.state==='SLEEP'?.2:Math.sin(t*1.7+e.seed)*.035;m.rotation.z=e.hp<=0?Math.PI/2:e.dodge>0?Math.sin(e.dodge*15)*.22:0;if(d.wings)d.wings.rotation.z=Math.sin(t*8)*.22;};
+S.animateAnimal=(e,t,dt)=>{
+ const m=e.model,d=m.userData,v=Math.hypot(e.vx||0,e.vz||0),swimming=!!e.swimming;
+ const gait=v>.3?Math.sin(t*(v>12?13:8)+e.seed):0;
+ for(let i=0;i<4;i++)d.legs[i].rotation.x=swimming?Math.sin(t*7+i*1.7+e.seed)*.58:gait*(i===0||i===3?1:-1)*(v>12?.75:.48);
+ if(e.attackAnim>0)d.legs[0].rotation.x=-1.4;
+ d.tail.rotation.y=Math.sin(t*(swimming?5:2)+e.seed)*(swimming?.35:.22);
+ d.head.rotation.x=e.state==='EAT'?.4:e.state==='SLEEP'?.2:Math.sin(t*1.7+e.seed)*.035;
+ m.rotation.x=swimming?Math.sin(t*3+e.seed)*.045:0;
+ m.rotation.z=e.hp<=0?Math.PI/2:e.dodge>0?Math.sin(e.dodge*15)*.22:0;
+ if(d.wings)d.wings.rotation.z=Math.sin(t*8)*.22;
+};
 S.human=()=>{const p=[],a=(g,c,pos,sc,rot)=>p.push(S.part(g,c,pos,sc,rot));a(box,0xb1aa89,[0,1.25,0],[.9,1,.44]);a(sphere,0xcba487,[0,2,0],[.32,.42,.32]);a(sphere,0x675244,[0,2.25,-.07],[.28,.22,.29]);for(const q of [-1,1]){a(cylinder,0x505d69,[q*.23,.45,0],[.17,.9,.17]);a(sphere,0x493c32,[q*.23,.08,.15],[.22,.14,.36]);a(cylinder,0xcba487,[q*.63,1.2,0],[.14,.9,.14],[0,0,q*.22]);a(sphere,0x252620,[q*.13,2.05,.29],[.04,.04,.025])}a(sphere,0xb78b72,[0,1.98,.34],[.1,.09,.13]);return S.pack(p);};
 S.vehicleModel=()=>{const g=new T.Group(),p=[],a=(geo,c,pos,sc,r)=>p.push(S.part(geo,c,pos,sc,r));const red=0x864d3b,edge=0xaa7155;
  a(box,red,[0,1.2,0],[2.7,.6,5.4]);a(box,0x383b35,[0,.85,0],[2.4,.35,5]);a(box,red,[0,1.7,1.7],[2.65,.75,1.8]);a(box,edge,[0,2.95,.25],[2.8,.16,2.1]);

@@ -68,12 +68,13 @@ test('active quest progress survives a session leave and rejoin',async()=>{
 
 test('server checks distance and safe zones for combat, hunt payout, respawns',async()=>{
  const f=await fixture(),enemy=f.peerA.room.npcs.get('hyena-1');
- await f.engine.command(f.peerA,{type:'attack',target:enemy.id});assert.equal(enemy.hp,75);
+ await f.engine.command(f.peerA,{type:'attack',target:enemy.id});assert.equal(enemy.hp,enemy.maxHp);
  f.peerA.player.x=enemy.x;f.peerA.player.z=enemy.z-2;
- await f.engine.command(f.peerA,{type:'attack',target:enemy.id});assert.ok(enemy.hp<75);
- for(let i=0;i<6;i++){f.tick(800);await f.engine.command(f.peerA,{type:'attack',target:enemy.id})}
+ await f.engine.command(f.peerA,{type:'attack',target:enemy.id});assert.ok(enemy.hp<enemy.maxHp);
+ for(let i=0;i<14&&enemy.hp>0;i++){f.tick(1000);await f.engine.command(f.peerA,{type:'attack',target:enemy.id})}
  assert.equal(enemy.hp,0);assert.ok(f.store.wallet(id1)>60);const reward=f.store.wallet(id1);
  await f.engine.command(f.peerA,{type:'attack',target:enemy.id});assert.equal(f.store.wallet(id1),reward);
+ f.peerA.player.hp=f.peerA.player.maxHp;f.tick(1000);
  f.peerB.player.x=f.peerA.player.x+1;f.peerB.player.z=f.peerA.player.z;
  await f.engine.command(f.peerA,{type:'pvp',enabled:true});await f.engine.command(f.peerB,{type:'pvp',enabled:true});
  await f.engine.command(f.peerA,{type:'attack',target:id2});assert.ok(f.peerB.player.hp<145);
@@ -125,6 +126,50 @@ test('unprovoked attack produces server-side wanted status and fades over time',
  assert.equal(p.wanted,0);
 });
 
+test('wanted players outside safe territory trigger a real pursuing guard patrol',async()=>{
+ const f=await fixture(),p=f.peerA.player,n=f.peerA.room.npcs.get('gazelle-1');
+ p.x=n.x-2;p.z=n.z;
+ await f.engine.command(f.peerA,{type:'attack',target:n.id});
+ assert.equal(p.wanted,1);
+ f.tick(50);
+ const guards=[...f.peerA.room.npcs.values()].filter(n=>n.reinforcement&&n.wantedId===p.id);
+ assert.ok(guards.length>0,'wanted player should get backup guards');
+ const guard=guards[0],initial=distance(guard,p);
+ for(let i=0;i<20;i++)f.tick(50);
+ assert.ok(distance(guard,p)<initial,'the reinforcement must actually pursue');
+ for(let i=0;i<100;i++)f.tick(50);
+ assert.ok(p.hp<p.maxHp,'a patrol must be able to catch and hurt an idle fugitive');
+ assert.ok(f.a.some(m=>m.type==='notice'&&m.message.includes('Стража')));
+ p.wanted=0;for(let i=0;i<100;i++)f.tick(50);
+ assert.ok(!f.peerA.room.npcs.has(guard.id),'backup despawns after the search ends');
+});
+
+test('death charges a single 3.5% ledger penalty and zero balance costs nothing',async()=>{
+ const f=await fixture(),p=f.peerA.player;
+ p.hp=0;f.engine.killPlayer(p,f.now());
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(await f.store.wallet(p.id),58);
+ assert.equal(f.store.ledger(p.id).filter(row=>row.reason.includes('гибели')).length,1);
+ f.engine.killPlayer(p,f.now());
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(await f.store.wallet(p.id),58);
+ f.tick(5100);assert.equal(p.hp,p.maxHp);
+ await f.store.reward(p.id,-58,'Spent claws','test:spend');
+ p.hp=0;f.engine.killPlayer(p,f.now());
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(await f.store.wallet(p.id),0);
+ assert.ok(f.a.some(m=>m.type==='death_penalty'&&m.amount===0));
+});
+
+test('death cost scales with wealth instead of a fixed charge',async()=>{
+ const f=await fixture(),p=f.peerA.player;
+ await f.store.reward(p.id,9940,'Starter wealth','test:wealth');
+ p.hp=0;f.engine.killPlayer(p,f.now());
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(await f.store.wallet(p.id),9650);
+ assert.ok(f.a.some(m=>m.type==='death_penalty'&&m.amount===350));
+});
+
 test('NPC dialogue is proximity checked and can offer a real quest',async()=>{
  const f=await fixture(),p=f.peerA.player;
  await f.engine.command(f.peerA,{type:'interact',contact:'rafiki'});
@@ -151,9 +196,9 @@ test('two players complete a real cooperative operation and each gets an idempot
  }
  assert.equal(party.operation.stage,'hunt');
  for(const target of ['hyena-1','hyena-2']){
-  const n=f.peerA.room.npcs.get(target);a.x=b.x=n.x;a.z=b.z=n.z-2;
-  for(let attempt=0;attempt<7&&n.hp>0;attempt++){
-   f.tick(850);await f.engine.command(f.peerA,{type:'attack',target});
+  const n=f.peerA.room.npcs.get(target);a.x=b.x=n.x;a.z=b.z=n.z-2;a.hp=a.maxHp;
+  for(let attempt=0;attempt<14&&n.hp>0;attempt++){
+   f.tick(1000);await f.engine.command(f.peerA,{type:'attack',target});
   }
   assert.equal(n.hp,0);
  }

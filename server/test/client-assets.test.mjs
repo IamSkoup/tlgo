@@ -82,3 +82,23 @@ test('desktop capture and camera-relative movement are connected without changin
   assert.match(motion,/export function cameraRelativeVector/);
   assert.match(css,/\.vignette\{background:linear-gradient\(0deg,rgba\(16,12,10,\.18\),transparent 32%\)\}/);
 });
+
+test('world features and death screen are present without a raised pipe or jump sound',async()=>{
+ const html=await read('client/index.html');
+ const logic=await read('client/js/online.js');
+ const world=await read('client/js/world.js');
+ const core=await read('client/js/core.js');
+ const css=await read('client/style.css');
+ assert.match(html,/id="deathScreen"/);
+ assert.match(html,/id="talkPrompt"/);
+ assert.match(logic,/this\.attachLabel\(entry,true\)/);
+ assert.match(logic,/this\.camera\.position\.copy\(desired\)/);
+ assert.match(logic,/showDeathScreen\(m\.seconds\)/);
+ assert.match(logic,/now-\(this\.lastAttackAt\|\|-Infinity\)<950/);
+ assert.doesNotMatch(logic,/sound\.play\('jump'/);
+ assert.match(world,/waterAt\(x,z\)/);
+ assert.match(world,/const river=|this\.river=strip\(0,6\.3/);
+ assert.doesNotMatch(world,/new T\.TubeGeometry\(/);
+ assert.match(core,/swimming\?Math\.sin\(t\*7/);
+ assert.match(css,/\.death-screen\{/);
+});

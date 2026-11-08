@@ -22,11 +22,29 @@ S.World=class{
  let treeN=0;for(let i=0;i<230;i++){let x=(rnd()-.5)*670,z=(rnd()-.5)*670;if(x>100&&z<-80)continue;if(S.LOCATIONS.some(l=>Math.hypot(x-l.x,z-l.z)<(l.name==='Водопой'?35:15)))continue;let scale=.7+rnd()*.7;m.position.set(x,S.height(x,z),z);m.rotation.set(0,rnd()*6.28,0);m.scale.setScalar(scale);m.updateMatrix();trees.setMatrixAt(treeN++,m.matrix);this.addCollider(x,z,.6*scale,7*scale);if(treeN>=170)break}trees.count=treeN;this.static.add(trees);this.trees=trees;
  for(let i=0;i<160;i++){const x=(rnd()-.5)*700,z=(rnd()-.5)*700,sz=.7+rnd()*2;if(S.LOCATIONS.some(l=>Math.hypot(x-l.x,z-l.z)<12)){m.scale.setScalar(0)}else{m.scale.set(sz,sz*(.5+rnd()),sz*.85);this.addCollider(x,z,sz*.75,sz*1.5)}m.position.set(x,S.height(x,z)+sz*.4,z);m.rotation.set(rnd(),rnd()*6,rnd());m.updateMatrix();rocks.setMatrixAt(i,m.matrix)}this.static.add(rocks);
  const gp=S.pack([S.part(new T.ConeGeometry(.15,1,3),0xb4b477,[0,.5,0],[1,1,1],[-.25,0,.25]),S.part(new T.ConeGeometry(.13,.8,3),0x9fba74,[.2,.4,.1],[1,1,1],[.2,0,-.3])]);const grass=new T.InstancedMesh(gp.geometry,S.meshMaterial,3000);for(let i=0;i<3000;i++){let x=(rnd()-.5)*650,z=(rnd()-.5)*650;m.position.set(x,S.height(x,z),z);m.rotation.set(0,rnd()*6.28,0);m.scale.setScalar(.7+rnd()*1.4);m.updateMatrix();grass.setMatrixAt(i,m.matrix)}this.static.add(grass);this.grass=grass;
+ // Small decorative stones and dry shrubs cost only two instanced draw calls.
+ // They have no collision radius: server/client rock collision seeds stay identical.
+ const detail=S.rng(17621),pebbles=new T.InstancedMesh(new T.DodecahedronGeometry(1,0),new T.MeshStandardMaterial({color:0x8a806b,flatShading:true,roughness:1}),650);
+ const shrubs=new T.InstancedMesh(new T.IcosahedronGeometry(1,0),new T.MeshStandardMaterial({color:0x686e44,flatShading:true,roughness:1}),720);
+ for(let i=0;i<650;i++){
+  const x=(detail()-.5)*695,z=(detail()-.5)*695,s=.22+detail()*.83;
+  m.position.set(x,S.height(x,z)+s*.28,z);m.rotation.set(detail()*.2,detail()*6.28,detail()*.2);
+  m.scale.set(s,s*(.3+detail()*.55),s*.65);m.updateMatrix();pebbles.setMatrixAt(i,m.matrix);
+ }
+ for(let i=0;i<720;i++){
+  const x=(detail()-.5)*690,z=(detail()-.5)*690,s=.35+detail()*.95;
+  m.position.set(x,S.height(x,z)+s*.35,z);m.rotation.set(0,detail()*6.28,0);
+  m.scale.set(s*1.35,s*.42,s);m.updateMatrix();shrubs.setMatrixAt(i,m.matrix);
+ }
+ pebbles.castShadow=false;shrubs.castShadow=false;
+ this.static.add(pebbles,shrubs);this.pebbles=pebbles;this.shrubs=shrubs;
  for(let i=0;i<22;i++){let a=i/22*Math.PI*2,r=420;let mesh=new T.Mesh(new T.ConeGeometry(38+rnd()*35,70+rnd()*65,5),new T.MeshStandardMaterial({color:0x7c8d80,flatShading:true}));mesh.position.set(Math.sin(a)*r,15,Math.cos(a)*r);mesh.rotation.y=rnd()*6;this.static.add(mesh);}
  }
  rock(x,z,sx,sy,sz,rot=0){const mesh=new T.Mesh(new T.DodecahedronGeometry(1,0),new T.MeshStandardMaterial({color:0x9b957d,flatShading:true,roughness:1}));mesh.position.set(x,S.height(x,z)+sy*.35,z);mesh.scale.set(sx,sy,sz);mesh.rotation.y=rot;mesh.castShadow=true;mesh.receiveShadow=true;this.static.add(mesh);return mesh;}
  buildLandmarks(){this.rock(-112,-106,13,23,12);this.rock(-102,-103,12,17,16,.5);const pride=this.rock(-96,-110,8,5,21,-.45);pride.position.y+=16;this.addCollider(-112,-106,9,32);this.addCollider(-102,-103,8,24);
  const raf=this.treeModel(true);raf.position.set(-109,S.height(-109,96),96);raf.scale.setScalar(1.8);this.static.add(raf);this.addCollider(-109,96,3.8,18);
+ const cliffs=[[-236,209,8,13,6],[-248,197,6,9,7],[-221,218,5,7,5],[-175,-244,8,14,6],[-160,-256,7,11,6],[-129,-240,5,8,5],[288,187,8,12,8],[306,200,7,10,6],[292,169,6,8,6],[226,-252,8,16,7],[214,-266,6,9,5],[245,-283,7,12,7]];
+ for(const [x,z,sx,sy,sz] of cliffs){this.rock(x,z,sx,sy,sz,(x+z)*.06);this.addCollider(x,z,sx*.78,sy);}
  for(const l of [S.LOCATIONS[0],S.LOCATIONS[10],S.LOCATIONS[12],S.LOCATIONS[13]]){this.rock(l.x-6,l.z-5,4,7,5);this.rock(l.x+6,l.z-5,4,7,5);const top=this.rock(l.x,l.z-5,9,3,6);top.position.y+=6;this.addCollider(l.x-6,l.z-5,3,8);this.addCollider(l.x+6,l.z-5,3,8);const cave=new T.Mesh(new T.CircleGeometry(4,24),new T.MeshBasicMaterial({color:0x24382e,side:T.DoubleSide}));cave.position.set(l.x,S.height(l.x,l.z-7)+2.8,l.z-7);this.static.add(cave)}
  for(let i=0;i<6;i++){const a=i*Math.PI/3,tree=this.treeModel();tree.position.set(-190+Math.cos(a)*20,S.height(-190+Math.cos(a)*20,Math.sin(a)*20),Math.sin(a)*20);tree.scale.setScalar(1.6);this.static.add(tree);this.addCollider(tree.position.x,tree.position.z,1,12)}
  const vg=new T.CylinderGeometry(13,43,53,13,1,true),vm=new T.MeshStandardMaterial({color:0x4d4944,roughness:1,flatShading:true});this.volcano=new T.Mesh(vg,vm);this.volcano.position.set(265,S.height(265,-312)+15,-312);this.static.add(this.volcano);this.addCollider(265,-312,24,60);
@@ -35,13 +53,60 @@ S.World=class{
  for(const [id,pos]of [[-228,-105],[-190,-12]].entries()){const [x,z]=pos;const mesh=S.pack([S.part(S.geo.cylinder,0x866b46,[0,1,0],[.25,5,.25],[0,0,1.15]),S.part(S.geo.cylinder,0x78603c,[0,1.5,.3],[.23,5,.23],[0,0,-1.12])]);mesh.position.set(x,S.height(x,z),z);this.static.add(mesh);this.barriers.push({id,x,z,mesh,broken:false,collider:this.addCollider(x,z,2.2,2.5)});}
  for(const [i,p] of [[-228,-108],[-145,-223],[175,166],[-185,7],[197,-205]].entries()){const mesh=new T.Mesh(new T.OctahedronGeometry(.8),new T.MeshStandardMaterial({color:0xf6cc79,emissive:0x996626,emissiveIntensity:.5}));mesh.position.set(p[0],S.height(...p)+1.5,p[1]);this.g.scene.add(mesh);this.secrets.push({id:i,x:p[0],z:p[1],mesh,found:false,name:['Память пещеры','Камень высоты','Тайна заводи','Голос Мизиму','След Сопротивления'][i]})}
  }
- makeWater(){this.waters=[];for(const [x,z,r] of [[76,26,24],[165,162,19],[-250,65,13]]){const mesh=new T.Mesh(new T.CircleGeometry(r,48),new T.MeshStandardMaterial({color:0x6caeac,transparent:true,opacity:.82,roughness:.22,metalness:.35}));mesh.rotation.x=-Math.PI/2;mesh.position.set(x,S.height(x,z)+.75,z);mesh.receiveShadow=true;this.static.add(mesh);this.waters.push({x,z,r,mesh});const ring=new T.Mesh(new T.RingGeometry(r-1,r+2,48),new T.MeshStandardMaterial({color:0xc6b480,side:T.DoubleSide}));ring.rotation.x=-Math.PI/2;ring.position.copy(mesh.position);ring.position.y-=.1;this.static.add(ring)}
- const pts=[];for(let z=110;z<=225;z+=4){let x=30+Math.sin(z*.035)*18;pts.push(new T.Vector3(x,S.height(x,z)+.4,z))}const curve=new T.CatmullRomCurve3(pts);const river=new T.Mesh(new T.TubeGeometry(curve,60,3.2,8,false),new T.MeshStandardMaterial({color:0x76b8b2,roughness:.3,metalness:.3}));river.scale.y=1;this.static.add(river);
+ makeWater(){
+  this.waters=[];this.ripples=[];
+  const pools=[[76,26,24],[165,162,19],[-250,65,13],[-165,178,16],[202,44,11],[12,-170,15],[-230,-24,12],[278,53,10]];
+  for(const [x,z,r] of pools){
+   const y=S.height(x,z)+.4;
+   const mesh=new T.Mesh(new T.CircleGeometry(r,48),new T.MeshStandardMaterial({color:0x638c85,transparent:true,opacity:.88,roughness:.35,metalness:.13,side:T.DoubleSide,depthWrite:false}));
+   mesh.rotation.x=-Math.PI/2;mesh.position.set(x,y,z);mesh.receiveShadow=true;this.static.add(mesh);
+   this.waters.push({x,z,r,y,mesh});
+   const bank=new T.Mesh(new T.RingGeometry(r-.9,r+2.3,48),new T.MeshStandardMaterial({color:0xb7a77c,side:T.DoubleSide,roughness:1}));
+   bank.rotation.x=-Math.PI/2;bank.position.set(x,y-.08,z);this.static.add(bank);
+   const ripple=new T.Mesh(new T.RingGeometry(r*.27,r*.29,48),new T.MeshBasicMaterial({color:0xb1c9ae,side:T.DoubleSide,transparent:true,opacity:.23,depthWrite:false}));
+   ripple.rotation.x=-Math.PI/2;ripple.position.set(x,y+.025,z);this.static.add(ripple);this.ripples.push(ripple);
+  }
+  // A river is a flat strip following the terrain, not a TubeGeometry pipe.
+  const strip=(offset,width,yOffset,material)=>{
+   const positions=[];
+   const vertex=(z,side)=>{
+    const x=30+Math.sin(z*.035)*18+offset+side*width*.5;
+    return [x,S.height(x,z)+yOffset,z];
+   };
+   for(let z=110;z<225;z+=2.5){
+    const left=vertex(z,-1),right=vertex(z,1),nextLeft=vertex(z+2.5,-1),nextRight=vertex(z+2.5,1);
+    positions.push(...left,...nextLeft,...right,...right,...nextLeft,...nextRight);
+   }
+   const geo=new T.BufferGeometry();geo.setAttribute('position',new T.Float32BufferAttribute(positions,3));geo.computeVertexNormals();
+   const mesh=new T.Mesh(geo,material);mesh.receiveShadow=true;this.static.add(mesh);return mesh;
+  };
+  const riverBank=new T.MeshStandardMaterial({color:0xb9a97d,roughness:1,side:T.DoubleSide});
+  strip(-3.7,1.4,.09,riverBank);strip(3.7,1.4,.09,riverBank);
+  this.river=strip(0,6.3,.18,new T.MeshStandardMaterial({color:0x659990,roughness:.3,metalness:.13,transparent:true,opacity:.9,depthWrite:false,side:T.DoubleSide}));
+  // Reeds around the pools and the river edge make water recognizable from afar.
+  const random=S.rng(98113),reeds=new T.InstancedMesh(new T.ConeGeometry(.19,1.7,5),new T.MeshStandardMaterial({color:0x7f8051,roughness:1,flatShading:true}),510),dummy=new T.Object3D();
+  for(let i=0;i<510;i++){
+   let x,z;
+   if(i<350){const pool=this.waters[i%this.waters.length],a=random()*Math.PI*2,r=pool.r+1+random()*4;x=pool.x+Math.cos(a)*r;z=pool.z+Math.sin(a)*r;}
+   else {z=110+random()*115;x=30+Math.sin(z*.035)*18+(random()<.5?-1:1)*(3.5+random()*2.5);}
+   const height=.65+random()*1.2;
+   dummy.position.set(x,S.height(x,z)+height*.8,z);dummy.rotation.set(0,random()*6.28,0);dummy.scale.set(.7,height,.7);dummy.updateMatrix();reeds.setMatrixAt(i,dummy.matrix);
+  }
+  reeds.castShadow=false;this.static.add(reeds);this.reeds=reeds;
+ }
+ waterAt(x,z){
+  const pond=this.waters.find(w=>Math.hypot(x-w.x,z-w.z)<w.r*.87);
+  if(pond)return pond;
+  if(z>=110&&z<=225&&Math.abs(x-(30+Math.sin(z*.035)*18))<2.8)return {y:S.height(x,z)+.18};
+  return null;
  }
  makeSky(){this.sun=new T.Mesh(new T.SphereGeometry(9,16,12),new T.MeshBasicMaterial({color:0xffe5a9}));this.g.scene.add(this.sun);this.moon=new T.Mesh(new T.SphereGeometry(5,12,8),new T.MeshBasicMaterial({color:0xe3e6da}));this.g.scene.add(this.moon);const p=[];const r=S.rng(902);for(let i=0;i<380;i++){let a=r()*Math.PI*2,b=r()*Math.PI*.45;p.push(Math.cos(a)*Math.cos(b)*420,Math.sin(b)*420+10,Math.sin(a)*Math.cos(b)*420)}const geo=new T.BufferGeometry();geo.setAttribute('position',new T.Float32BufferAttribute(p,3));this.stars=new T.Points(geo,new T.PointsMaterial({color:0xf6edd4,size:1.5,sizeAttenuation:true,transparent:true}));this.g.scene.add(this.stars);
  const cloudP=[];for(let i=0;i<30;i++){let x=(r()-.5)*650,z=(r()-.5)*650;for(let j=0;j<4;j++)cloudP.push(S.part(S.geo.ico,0xf4edda,[x+j*10,95+r()*10,z],[18,5+r()*3,10]))}this.clouds=S.pack(cloudP,new T.MeshBasicMaterial({vertexColors:true,transparent:true,opacity:.7}));this.g.scene.add(this.clouds);
  }
- update(dt){const t=this.g.time;this.clouds.position.x=Math.sin(t*.002)*30;this.grass.rotation.y=Math.sin(t*.7)*.00015*(this.g.weather.index===6?3:1);for(const s of this.secrets){s.mesh.visible=!s.found;s.mesh.rotation.y=t;s.mesh.position.y=S.height(s.x,s.z)+1.5+Math.sin(t*2+s.id)*.25;}this.scar.rotation.y=Math.PI+Math.sin(t*.4)*.12;this.lava.material.color.setHSL(.05+Math.sin(t*2)*.015,1,.55);}
+ update(dt){const t=this.g.time;this.clouds.position.x=Math.sin(t*.002)*30;this.grass.rotation.y=Math.sin(t*.7)*.00015*(this.g.weather.index===6?3:1);for(const s of this.secrets){s.mesh.visible=!s.found;s.mesh.rotation.y=t;s.mesh.position.y=S.height(s.x,s.z)+1.5+Math.sin(t*2+s.id)*.25;}this.scar.rotation.y=Math.PI+Math.sin(t*.4)*.12;this.lava.material.color.setHSL(.05+Math.sin(t*2)*.015,1,.55);
+  for(const [i,ripple] of this.ripples.entries()){const scale=1+Math.sin(t*.9+i)*.045;ripple.scale.set(scale,scale,1);ripple.material.opacity=.19+Math.sin(t*1.5+i)*.075;}
+  this.river.material.opacity=.86+Math.sin(t*.65)*.035;
+ }
 };
 S.Weather=class{
  constructor(game){this.g=game;this.hour=9;this.index=0;this.timer=130;this.flash=0;this.rnd=S.rng(953);const count=650,pos=new Float32Array(count*3);for(let i=0;i<count;i++){pos[i*3]=(this.rnd()-.5)*100;pos[i*3+1]=this.rnd()*45;pos[i*3+2]=(this.rnd()-.5)*100}const geo=new T.BufferGeometry();geo.setAttribute('position',new T.BufferAttribute(pos,3));this.rain=new T.Points(geo,new T.PointsMaterial({color:0xc7e3dc,size:.18,transparent:true,opacity:.6}));game.scene.add(this.rain);}

@@ -39,6 +39,9 @@ export class SupabaseStore {
   async reward(id,amount,reason,eventKey,xp=0){
     return unwrap(await this.api.rpc('sf_grant_activity',{p_user:id,p_amount:amount,p_reason:reason,p_event_key:eventKey,p_xp:xp}));
   }
+  async deathPenalty(id,eventKey){
+    return unwrap(await this.api.rpc('sf_death_penalty',{p_user:id,p_event_key:eventKey}));
+  }
   async finishQuest(id,quest){return unwrap(await this.api.rpc('sf_finish_quest',{p_user:id,p_quest:quest}));}
   async adjustReputation(id,delta){
     const profile=await this.profile(id);

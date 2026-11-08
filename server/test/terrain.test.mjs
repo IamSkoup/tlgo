@@ -5,7 +5,7 @@ import {GameCore} from '../src/game.mjs';
 import {FakeStore} from './fixtures.mjs';
 
 test('authoritative terrain mirrors fixed-seed trees, rocks and landmark barriers',()=>{
-  assert.equal(TERRAIN_COLLIDERS.length,349);
+  assert.equal(TERRAIN_COLLIDERS.length,361);
   const first=TERRAIN_COLLIDERS[0];
   assert.ok(Math.abs(first.x+316.1686661071)<.00001);
   assert.ok(Math.abs(first.z-278.6911111371)<.00001);

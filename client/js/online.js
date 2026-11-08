@@ -114,7 +114,7 @@ function handleMessage(m){
    connection('online','На связи');$('signoutButton').classList.remove('hidden');
    if(!data.profile){createStarterCards();show('creator')}else {show('menu');if(data.desiredRoom)send(data.desiredRoom);updateMenu();}break;
   case 'account':data.profile=m.profile;data.wallet=Number(m.wallet||0);data.owned=m.owned||[];data.ledger=m.ledger||[];data.quests=m.quests||[];data.friends=m.friends||[];data.clan=m.clan||null;updateMenu();if(data.view==='creator'&&data.profile)show('menu');else if(data.view==='panel'&&['animals','appearance','history','friends','clan','quests'].includes(data.activePanel))openPanel(data.activePanel);break;
-  case 'joined':data.room=m.room;data.me=m.you;data.party=null;data.partyInvites=[];data.serverQuest=null;data.desiredRoom=m.room.code?{type:'join',code:m.room.code}:{type:'join'};data.resources=new Map(m.resources.map(r=>[r.id,r]));data.serverQuests=m.quests;scene.syncResources();scene.resetCamera();show('hud');updateObjective();document.body.classList.add('ingame');$('chatChannel').value='session';$('chatHistory').replaceChildren();if(matchMedia('(pointer: coarse)').matches){$('chatBox').classList.add('chat-collapsed');$('chatToggle').textContent='Чат'}if(data.pvp)send({type:'pvp',enabled:true});notify('Сессия: '+m.room.name+(m.room.code?' · Код '+m.room.code:''),6);
+  case 'joined':hideDeathScreen();data.room=m.room;data.me=m.you;data.party=null;data.partyInvites=[];data.serverQuest=null;data.desiredRoom=m.room.code?{type:'join',code:m.room.code}:{type:'join'};data.resources=new Map(m.resources.map(r=>[r.id,r]));data.serverQuests=m.quests;scene.syncResources();scene.resetCamera();show('hud');updateObjective();document.body.classList.add('ingame');$('chatChannel').value='session';$('chatHistory').replaceChildren();if(matchMedia('(pointer: coarse)').matches){$('chatBox').classList.add('chat-collapsed');$('chatToggle').textContent='Чат'}if(data.pvp)send({type:'pvp',enabled:true});notify('Сессия: '+m.room.name+(m.room.code?' · Код '+m.room.code:''),6);
    if(!localStorage.getItem('sf_onboard_'+data.me))showOnboard();break;
   case 'snapshot':scene.handleSnapshot(m);break;
   case 'hit':scene.hit(m);break;
@@ -133,8 +133,9 @@ function handleMessage(m){
   case 'party_state':data.party=m.party;updateObjective();if(data.view==='panel'&&data.activePanel==='party')openPanel('party');break;
   case 'party_completed':sound.play('reward','interface',{volume:.9});notify('Группа завершила операцию «'+m.title+'»!',7);break;
   case 'departed':scene.removePlayer(m.id);break;
-  case 'dead':notify('Ты потерял сознание. Возрождение через несколько секунд.',5);break;
-  case 'respawn':notify('Ты вернулся у лагеря.');break;
+  case 'dead':showDeathScreen(m.seconds);break;
+  case 'death_penalty':data.wallet=m.balance;updateMenu();$('deathLoss').textContent=m.amount?'Потеряно '+fmt(m.amount)+' Claws · 3,5% от баланса':'Claws не потеряны';break;
+  case 'respawn':hideDeathScreen();scene.cameraFocus=null;notify('Ты вернулся у лагеря.');break;
   case 'notice':notify(m.message);break;
   case 'error':notify(m.message,6);break;
  }
@@ -144,6 +145,17 @@ function updateMenu(){
 }
 function updateWanted(){const badge=$('wantedBadge');badge.classList.toggle('hidden',data.wanted===0);badge.textContent='Розыск · '+['','I','II','III','IV','V'][data.wanted||0];}
 let dialogueTimer=null;
+let deathTimer=null;
+function showDeathScreen(seconds=5){
+ if(deathTimer)clearInterval(deathTimer);
+ const screen=$('deathScreen'),end=Date.now()+seconds*1000;
+ $('deathLoss').textContent='Осталось дождаться возрождения…';
+ screen.classList.remove('hidden');
+ if(document.pointerLockElement)document.exitPointerLock();
+ const update=()=>$('deathCount').textContent='Возрождение через '+Math.max(1,Math.ceil((end-Date.now())/1000))+' сек.';
+ update();deathTimer=setInterval(update,200);
+}
+function hideDeathScreen(){if(deathTimer)clearInterval(deathTimer);deathTimer=null;$('deathScreen').classList.add('hidden')}
 function closeDialogue(){clearInterval(dialogueTimer);dialogueTimer=null;$('dialogueBox').classList.add('hidden')}
 function showDialogue(m){
  if(document.pointerLockElement)document.exitPointerLock();
@@ -298,7 +310,11 @@ class Scene {
   const dropPositions=new Float32Array(480*3);for(let i=0;i<dropPositions.length;i+=3){dropPositions[i]=(Math.random()-.5)*82;dropPositions[i+1]=Math.random()*50;dropPositions[i+2]=(Math.random()-.5)*82}
   this.rain=new T.Points(new T.BufferGeometry(),new T.PointsMaterial({color:0xc2b5a6,size:.24,transparent:true,opacity:.59,depthWrite:false}));this.rain.geometry.setAttribute('position',new T.BufferAttribute(dropPositions,3));this.rain.visible=false;this.scene.add(this.rain);
   this.camera.position.set(-10,58,145);this.camera.lookAt(-45,7,0);this.waypoint=null;
-  this.namedNPCs=[];for(const [id,name,species,x,z] of NPCS){const entry=this.addAnimal('npc-'+id,name,species,x,z,true);this.namedNPCs.push(entry)}
+  this.namedNPCs=[];for(const [index,[id,name,species,x,z]] of NPCS.entries()){
+   const entry=this.addAnimal('npc-'+id,name,species,x,z,true);
+   entry.homeX=x;entry.homeZ=z;entry.patrolSeed=index*1.83;this.attachLabel(entry,true);
+   this.namedNPCs.push(entry);
+  }
   this.resourceObjects=new Map();
   this.last=performance.now();this.yaw=2.5;this.pitch=.28;this.time=0;this.selfTarget=null;this.lastAudioUpdate=0;this.thunderAt=0;this.fpsFrames=0;this.fpsLast=performance.now();this.lastRendered=0;this.quality();this.animate=this.animate.bind(this);requestAnimationFrame(this.animate);
   addEventListener('resize',()=>{this.camera.aspect=innerWidth/innerHeight;this.camera.updateProjectionMatrix();this.renderer.setSize(innerWidth,innerHeight)});
@@ -322,22 +338,26 @@ class Scene {
    this.pitch=S.clamp(this.pitch+dy*.003*prefs.sensitivity*(prefs.invertY?-1:1),-.15,.8);
   });
   for(const event of ['pointerup','pointercancel','lostpointercapture'])this.canvas.addEventListener(event,e=>{if(e.pointerId===this.touchLookPointer)this.touchLookPointer=null});
-  addEventListener('pointerup',()=>this.dragging=false);addEventListener('pointermove',e=>{if((this.dragging||document.pointerLockElement===this.canvas)&&data.room&&data.view==='hud'&&e.pointerType==='mouse'){this.yaw-=e.movementX*.0035*prefs.sensitivity;this.pitch=S.clamp(this.pitch+e.movementY*.002*prefs.sensitivity*(prefs.invertY?-1:1),-.15,.8)}});
+  addEventListener('pointerup',()=>this.dragging=false);addEventListener('pointermove',e=>{if((this.dragging||document.pointerLockElement===this.canvas)&&data.room&&data.view==='hud'&&e.pointerType==='mouse'){
+   const dx=S.clamp(e.movementX,-95,95),dy=S.clamp(e.movementY,-80,80);
+   this.yaw-=dx*.0035*prefs.sensitivity;
+   this.pitch=S.clamp(this.pitch+dy*.002*prefs.sensitivity*(prefs.invertY?-1:1),-.15,.8);
+  }});
   document.addEventListener('pointerlockchange',()=>{
    const released=this.pointerWasLocked&&document.pointerLockElement!==this.canvas;
    this.pointerWasLocked=document.pointerLockElement===this.canvas;
-   if(released&&data.room&&data.view==='hud'&&$('dialogueBox').classList.contains('hidden')&&document.activeElement!==$('chatInput'))show('menu');
+   if(released&&data.room&&data.view==='hud'&&$('dialogueBox').classList.contains('hidden')&&$('deathScreen').classList.contains('hidden')&&document.activeElement!==$('chatInput'))show('menu');
   });
  }
  quality(){const low=data.quality==='low';const ratio=low?.72:data.quality==='high'?Math.min(devicePixelRatio,1.8):Math.min(devicePixelRatio,1.2);this.renderer.setPixelRatio(Math.max(.45,Math.min(2.2,ratio*prefs.renderScale)));this.renderer.shadowMap.enabled=!low&&prefs.shadows;this.sun.castShadow=!low&&prefs.shadows;this.world.grass.visible=!low&&!prefs.reducedEffects;this.renderer.setSize(innerWidth,innerHeight);$('fpsIndicator').classList.toggle('hidden',!prefs.showFps)}
  addAnimal(id,name,species,x,z,named=false,color=null){
-  const model=S.animal(species,id.replace('npc-',''),color??undefined);this.scene.add(model);
+  const model=S.animal(species,id.startsWith('guard-')?'guard':id.replace('npc-',''),color??undefined);this.scene.add(model);
   const e={id,name,species,color,model,x,z,y:S.height(x,z),heading:0,hp:100,vx:0,vz:0,seed:Math.random()*6,dodge:0,attackAnim:0,state:'IDLE',named,target:{x,z},lastNet:0};
   if(named)model.scale.multiplyScalar(.95);if(named&&['ono','anga','zazu'].includes(id.slice(4)))e.y+=4;
   if(!named)this.attachLabel(e);
   return e;
  }
- attachLabel(e){const canvas=document.createElement('canvas');canvas.width=256;canvas.height=64;const ctx=canvas.getContext('2d');ctx.font='bold 22px Manrope,Arial';ctx.textAlign='center';ctx.fillStyle='#2b190fcf';ctx.fillRect(0,6,256,48);ctx.fillStyle='#ffdb9b';ctx.fillText(e.name.slice(0,19),128,36);const texture=new T.CanvasTexture(canvas);const sprite=new T.Sprite(new T.SpriteMaterial({map:texture,transparent:true,depthTest:false}));sprite.scale.set(6.4,1.6,1);sprite.position.set(0,4.5,0);e.model.add(sprite);e.label=sprite}
+ attachLabel(e,named=false){const canvas=document.createElement('canvas');canvas.width=256;canvas.height=64;const ctx=canvas.getContext('2d');ctx.font='bold 23px Manrope,Arial';ctx.textAlign='center';ctx.fillStyle=named?'#23190ece':'#2b190fcf';ctx.fillRect(0,6,256,48);ctx.fillStyle=named?'#ffd78c':'#ffdb9b';ctx.fillText(e.name.slice(0,19),128,36);const texture=new T.CanvasTexture(canvas);const sprite=new T.Sprite(new T.SpriteMaterial({map:texture,transparent:true,depthTest:false}));sprite.scale.set(named?4.7:6.4,named?1.18:1.6,1);sprite.position.set(0,named?5.4:4.5,0);e.model.add(sprite);e.label=sprite}
  removePlayer(id){const e=data.playerObjects.get(id);if(e){this.scene.remove(e.model);data.playerObjects.delete(id)}}
  clearDynamic(){for(const e of [...data.playerObjects.values(),...data.npcObjects.values()])this.scene.remove(e.model);for(const mesh of this.resourceObjects.values())this.scene.remove(mesh);this.resourceObjects.clear();data.playerObjects.clear();data.npcObjects.clear();this.selfTarget=null}
  syncResources(){
@@ -356,20 +376,28 @@ class Scene {
    group.userData.marker=mote;this.scene.add(group);this.resourceObjects.set(r.id,group);
   }
  }
- resetCamera(){this.camera.position.set(-65,15,70);this.yaw=2.5;this.pitch=.26;this.localVelocity={x:0,z:0}}
+ resetCamera(){this.camera.position.set(-65,15,70);this.yaw=2.5;this.pitch=.26;this.localVelocity={x:0,z:0};this.cameraFocus=null}
  handleSnapshot(m){
   data.roomWeather=Number(m.weather??data.roomWeather);this.game.weather.index=data.roomWeather;
   const displayHour=(18+this.time/75)%24;
   $('weather').textContent=(displayHour<5||displayHour>=21?'Ночь':displayHour<10?'Утро':displayHour<17?'День':'Закат')+' · '+(S.WEATHERS[data.roomWeather]||'Ясно');
   const current=new Set();for(const item of m.players){const p=Array.isArray(item)?{id:item[0],nickname:item[1],species:item[2],model:item[3],x:item[4],z:item[5],heading:item[6],hp:item[7],maxHp:item[8],stamina:item[9],maxStamina:item[10],wanted:item[11],abilityReady:item[12],jump:item[13],color:item[14]}:item;current.add(p.id);let e=data.playerObjects.get(p.id);
    if(!e||e.species!==p.model||e.color!==(p.color??null)){if(e)this.scene.remove(e.model);e=this.addAnimal(p.id,p.nickname,p.model,p.x,p.z,false,p.color??null);data.playerObjects.set(p.id,e)}
-   const prevJump=!!e.target?.jump;e.target={x:p.x,z:p.z,heading:p.heading,hp:p.hp,jump:p.jump};e.hp=p.hp;e.lastNet=performance.now();if(p.id===data.me){if(prevJump&&!p.jump)sound.play('landing','effects',{volume:.65});this.selfTarget=e.target;data.wanted=p.wanted||0;data.abilityReady=!!p.abilityReady;$('abilityButton').disabled=!data.abilityReady;updateWanted();$('hudName').textContent=p.nickname+' · '+(speciesByCode(p.species)?.title||p.species);$('healthText').textContent=p.hp+' / '+p.maxHp;$('healthBar').style.width=p.hp/p.maxHp*100+'%';$('staminaText').textContent=p.stamina+' / '+p.maxStamina;$('staminaBar').style.width=p.stamina/p.maxStamina*100+'%';$('region').textContent=this.world.region(p);}}
+   e.target={x:p.x,z:p.z,heading:p.heading,hp:p.hp,jump:p.jump};e.hp=p.hp;e.lastNet=performance.now();if(p.id===data.me){this.selfTarget=e.target;data.wanted=p.wanted||0;data.abilityReady=!!p.abilityReady;$('abilityButton').disabled=!data.abilityReady;updateWanted();$('hudName').textContent=p.nickname+' · '+(speciesByCode(p.species)?.title||p.species);$('healthText').textContent=p.hp+' / '+p.maxHp;$('healthBar').style.width=p.hp/p.maxHp*100+'%';$('staminaText').textContent=p.stamina+' / '+p.maxStamina;$('staminaBar').style.width=p.stamina/p.maxStamina*100+'%';$('region').textContent=this.world.region(p);}}
   for(const id of data.playerObjects.keys())if(!current.has(id))this.removePlayer(id);
   for(const item of m.npcs){const n=Array.isArray(item)?{id:item[0],name:item[1],species:item[2],x:item[3],z:item[4],hp:item[5],maxHp:item[6],dead:item[7]}:item;let e=data.npcObjects.get(n.id);if(!e){e=this.addAnimal(n.id,n.name,n.species,n.x,n.z);data.npcObjects.set(n.id,e)}e.target={x:n.x,z:n.z};e.hp=n.hp;e.model.visible=!n.dead}
   $('playersCount').textContent=m.players.length+' игрок(ов) поблизости';
  }
  hit(m){const e=data.playerObjects.get(m.target)||data.npcObjects.get(m.target);if(e)e.attackAnim=.32;const me=data.playerObjects.get(data.me);if(me&&(m.target===data.me||m.from===data.me||e&&Math.hypot(me.x-e.x,me.z-e.z)<30)){const pan=e&&e!==me?S.clamp((e.x-me.x)/20,-.85,.85):0;sound.play(m.target===data.me?'hit':'punch','effects',{volume:m.target===data.me?.95:.66,pan})}}
- attack(){const me=data.playerObjects.get(data.me);if(!me)return;const possible=[...data.npcObjects.values(),...data.playerObjects.values()].filter(e=>e.id!==data.me&&e.hp>0&&Math.hypot(e.x-me.x,e.z-me.z)<5).sort((a,b)=>S.dist(a,me)-S.dist(b,me))[0];if(possible&&send({type:'attack',target:possible.id}))sound.play('bite','effects',{volume:.68,rate:.95+Math.random()*.1})}
+ attack(){
+  const now=performance.now();if(now-(this.lastAttackAt||-Infinity)<950)return;
+  const me=data.playerObjects.get(data.me);if(!me)return;
+  const possible=[...data.npcObjects.values(),...data.playerObjects.values()].filter(e=>e.id!==data.me&&e.hp>0&&Math.hypot(e.x-me.x,e.z-me.z)<5).sort((a,b)=>S.dist(a,me)-S.dist(b,me))[0];
+  if(possible&&send({type:'attack',target:possible.id})){
+   this.lastAttackAt=now;
+   sound.play('bite','effects',{volume:.68,rate:.95+Math.random()*.1});
+  }
+ }
  ability(){if(!data.abilityReady)return notify('Способность восстанавливается.');send({type:'ability'})}
  talk(){const me=data.playerObjects.get(data.me);if(!me)return;const nearest=this.namedNPCs.filter(n=>Math.hypot(me.x-n.x,me.z-n.z)<11).sort((a,b)=>S.dist(me,a)-S.dist(me,b))[0];if(!nearest)return notify('Сейчас рядом нет собеседника.');send({type:'interact',contact:nearest.id.slice(4)})}
  gather(){const me=data.playerObjects.get(data.me);if(!me)return;const r=[...data.resources.values()].filter(r=>Date.now()>=r.readyAt).sort((a,b)=>S.dist(a,me)-S.dist(b,me))[0];if(r&&S.dist(r,me)<5.5)send({type:'gather',id:r.id});else notify('Рядом нет готовых растений. Поищи янтарные метки.')}
@@ -392,7 +420,15 @@ class Scene {
   this.world.stars.material.opacity=Math.max(.02,(1-solar)*.72);
   this.rain.visible=wet&&me&&inGame&&data.quality!=='low'&&!prefs.reducedEffects;
   if(this.rain.visible){this.rain.position.set(me.x,me.y,me.z);const drops=this.rain.geometry.attributes.position;for(let i=0;i<drops.count;i++){const y=drops.getY(i)-dt*(weather===3?21:37);drops.setY(i,y<0?50:y)}drops.needsUpdate=true}
-  for(const e of this.namedNPCs){S.animateAnimal(e,this.time,dt);e.model.position.set(e.x,e.y,e.z);e.model.rotation.y=e.heading}
+  for(const e of this.namedNPCs){
+   const oldX=e.x,oldZ=e.z,phase=this.time*.52+e.patrolSeed;
+   e.x=e.homeX+(Math.sin(phase)-Math.sin(e.patrolSeed))*1.5;
+   e.z=e.homeZ+(Math.cos(phase*.83)-Math.cos(e.patrolSeed*.83))*1.5;
+   e.vx=(e.x-oldX)/Math.max(dt,.01);e.vz=(e.z-oldZ)/Math.max(dt,.01);
+   if(Math.hypot(e.vx,e.vz)>.08)e.heading=Math.atan2(e.vx,e.vz);
+   e.y=S.height(e.x,e.z)+(['ono','anga','zazu'].includes(e.id.slice(4))?4:0);
+   S.animateAnimal(e,this.time,dt);e.model.position.set(e.x,e.y,e.z);e.model.rotation.y=e.heading;
+  }
   for(const [id,mesh] of this.resourceObjects){const r=data.resources.get(id);mesh.visible=!!r&&Date.now()>=r.readyAt;if(mesh.visible){mesh.userData.marker.position.y=1.65+Math.sin(this.time*2+mesh.position.x)*.16;mesh.userData.marker.rotation.y+=dt*1.2}}
   for(const [id,e] of [...data.playerObjects,...data.npcObjects]){
    const t=e.target||{x:e.x,z:e.z};const oldX=e.x,oldZ=e.z;
@@ -405,20 +441,28 @@ class Scene {
    }else{const k=1-Math.exp(-dt*10);e.x=S.lerp(e.x,t.x,k);e.z=S.lerp(e.z,t.z,k)}
    e.heading=t.heading??(Math.atan2(e.x-oldX,e.z-oldZ)||e.heading);
    e.vx=(e.x-oldX)/Math.max(dt,.01);e.vz=(e.z-oldZ)/Math.max(dt,.01);
-   e.y=S.height(e.x,e.z)+(t.jump?.85:0);e.model.position.set(e.x,e.y,e.z);e.model.rotation.y=e.heading;
+   const water=this.world.waterAt(e.x,e.z);
+   e.swimming=!!water&&t.jump!==true;
+   e.y=e.swimming?water.y-.44+Math.sin(this.time*3+e.seed)*.11:S.height(e.x,e.z)+(t.jump?.85:0);
+   e.model.position.set(e.x,e.y,e.z);e.model.rotation.y=e.heading;
    e.attackAnim=Math.max(0,e.attackAnim-dt);S.animateAnimal(e,this.time,dt);
   }
   if(me&&inGame){
-   const look=new T.Vector3(me.x,me.y+2.1,me.z);const dist=prefs.cameraDistance;
-   const desired=new T.Vector3(me.x+Math.sin(this.yaw)*dist*Math.cos(this.pitch),me.y+5+Math.sin(this.pitch)*dist,me.z+Math.cos(this.yaw)*dist*Math.cos(this.pitch));
+   const look=new T.Vector3(me.x,me.y+2.1,me.z),dist=prefs.cameraDistance;
+   if(!this.cameraFocus)this.cameraFocus=look.clone();
+   this.cameraFocus.lerp(look,1-Math.exp(-dt*19));
+   const focus=this.cameraFocus;
+   const desired=new T.Vector3(focus.x+Math.sin(this.yaw)*dist*Math.cos(this.pitch),focus.y+2.9+Math.sin(this.pitch)*dist,focus.z+Math.cos(this.yaw)*dist*Math.cos(this.pitch));
    desired.y=Math.max(desired.y,S.height(desired.x,desired.z)+2);
-   this.camera.position.lerp(desired,1-Math.exp(-dt*12));this.camera.lookAt(look);
+   this.camera.position.copy(desired);this.camera.lookAt(focus);
    const near=[...data.resources.values()].filter(r=>Date.now()>=r.readyAt).sort((a,b)=>S.dist(a,me)-S.dist(b,me))[0];
    const contact=this.namedNPCs.filter(n=>Math.hypot(me.x-n.x,me.z-n.z)<11).sort((a,b)=>S.dist(me,a)-S.dist(me,b))[0];
    $('talkButton').classList.toggle('hidden',!contact);
+   $('talkPrompt').classList.toggle('hidden',!contact);
+   if(contact)$('talkPrompt').textContent=(matchMedia('(pointer: coarse)').matches?'Нажми «Диалог»':'R — поговорить')+' с '+contact.name;
    $('actionHint').textContent=near&&S.dist(near,me)<6?'E — собрать '+(near.type==='herb'?'травы':'древний след'):contact?'R — поговорить с '+contact.name:'WASD — движение · Shift — бег · E — собирать';
    const speed=Math.hypot(me.vx,me.vz);
-   if(speed>1.5&&me.target?.jump!==true){const pond=this.world.waters.some(w=>Math.hypot(me.x-w.x,me.z-w.z)<w.r+6);const surface=pond||[3,4,5].includes(data.roomWeather)?'mud':Math.hypot(me.x-260,me.z+260)<90?'stone':me.x>90&&me.z< -65?'sand':'grass';sound.step(surface,speed>8)}
+   if(speed>1.5&&me.target?.jump!==true&&!me.swimming){const pond=this.world.waters.some(w=>Math.hypot(me.x-w.x,me.z-w.z)<w.r+6);const surface=pond||[3,4,5].includes(data.roomWeather)?'mud':Math.hypot(me.x-260,me.z+260)<90?'stone':me.x>90&&me.z< -65?'sand':'grass';sound.step(surface,speed>8)}
    if(now-this.lastAudioUpdate>650){this.lastAudioUpdate=now;const waterDistance=Math.min(...this.world.waters.map(w=>Math.max(0,Math.hypot(me.x-w.x,me.z-w.z)-w.r)));sound.setWaterDistance(waterDistance);
     const foes=[...data.npcObjects.values()].some(n=>n.hp>0&&n.id.startsWith('hyena-')&&Math.hypot(me.x-n.x,me.z-n.z)<24);
     const action=data.serverQuest&&!data.serverQuest.completed;
@@ -467,7 +511,7 @@ for(const event of ['pointerup','pointercancel','lostpointercapture'])touchStick
 addEventListener('keydown',e=>{
  if(e.target.closest('input,select,textarea'))return;
  if(!$('dialogueBox').classList.contains('hidden')){if(e.code==='Escape')closeDialogue();return}
- if(['Space','ArrowUp','ArrowDown'].includes(e.code))e.preventDefault();const first=!keys.has(e.code);keys.add(e.code);if(first&&data.room&&e.code==='Space'){sound.start();sound.play('jump','effects',{volume:.66})}
+ if(['Space','ArrowUp','ArrowDown'].includes(e.code))e.preventDefault();const first=!keys.has(e.code);keys.add(e.code);
  if(e.code==='Escape'){if(data.view==='panel')resumeView();else if(data.room)show(data.view==='hud'?'menu':'hud')}
  if(e.code==='KeyM'&&data.room)openPanel('map');
  if(e.code==='Enter'&&data.room&&data.view==='hud'){if(document.pointerLockElement)document.exitPointerLock();$('chatInput').focus()}
@@ -499,8 +543,8 @@ sprintButton.onclick=()=>{
  sprintButton.classList.toggle('is-active',active);
  sprintButton.setAttribute('aria-pressed',String(active));
 };
-holdMobileButton('mobileJump','Space',()=>{sound.play('jump','effects',{volume:.66});jumpQueued=true;sendCurrentInput(true)});
-$('mobileJump').onclick=e=>{if(e.detail===0){sound.play('jump','effects',{volume:.66});jumpQueued=true;sendCurrentInput(true)}};
+holdMobileButton('mobileJump','Space',()=>{jumpQueued=true;sendCurrentInput(true)});
+$('mobileJump').onclick=e=>{if(e.detail===0){jumpQueued=true;sendCurrentInput(true)}};
 $('attackButton').onclick=()=>scene.attack();$('gatherButton').onclick=()=>scene.gather();
 $('abilityButton').onclick=()=>scene.ability();
 $('talkButton').onclick=()=>scene.talk();
