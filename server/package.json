@@ -5,5 +5,5 @@
   "type": "module",
   "engines": { "node": ">=22" },
   "scripts": { "start": "node src/index.mjs", "start:env": "node --env-file=.env src/index.mjs", "dev": "node --watch src/index.mjs", "test": "node --test test/*.test.mjs", "bench": "node scripts/benchmark.mjs", "moderate": "node --env-file=.env scripts/moderate.mjs" },
-  "dependencies": { "@supabase/supabase-js": "2.81.1", "ws": "8.18.3" }
+  "dependencies": { "@supabase/supabase-js": "2.81.1", "ws": "8.22.1" }
 }
