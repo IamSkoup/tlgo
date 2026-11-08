@@ -106,6 +106,7 @@ test('private session owner can invite friends, change name and code, and exclud
  await f.engine.command(f.peerA,{type:'session_invite',userId:id2});
  assert.ok(f.b.some(m=>m.type==='session_invitation'&&m.code===oldCode));
  await f.engine.command(f.peerB,{type:'join',code:oldCode});
+ assert.ok(f.a.some(m=>m.type==='session_members'&&m.members.some(p=>p.id===id2)));
  await f.engine.command(f.peerA,{type:'session_rename',name:'Наш лес'});
  assert.equal(f.peerA.room.name,'Наш лес');
  await f.engine.command(f.peerA,{type:'session_rotate_code'});
@@ -113,6 +114,7 @@ test('private session owner can invite friends, change name and code, and exclud
  assert.ok(f.b.some(m=>m.type==='session_updated'&&m.name==='Наш лес'));
  await f.engine.command(f.peerA,{type:'session_kick',userId:id2});
  assert.equal(f.peerB.room,null);
+ assert.deepEqual(f.a.filter(m=>m.type==='session_members').at(-1).members.map(m=>m.id),[id1]);
  assert.ok(f.b.some(m=>m.type==='session_kicked'));
  await f.engine.command(f.peerB,{type:'join',code:f.peerA.room.code});
  assert.equal(f.peerB.room,null);

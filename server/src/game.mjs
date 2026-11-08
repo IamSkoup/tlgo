@@ -182,6 +182,7 @@ export class GameCore {
     this.emit(peer,{type:'joined',room:{id:room.id,name:room.name,code:room.code,visibility:room.visibility,owner:room.owner},you:p.id,resources:[...room.resources.values()],quests:QUESTS,shops:SHOPS,items:SHOP_ITEMS});
     this.store.chatHistory('session_id',room.id).then(rows=>this.emit(peer,{type:'chat_history',channel:'session',rows:rows.map(r=>({author:room.players.get(r.author)?.nickname||'Игрок',body:r.body,time:r.created_at}))})).catch(e=>this.log.error('session history',e.message));
     if(p.quest)this.emit(peer,{type:'quest_state',id:p.quest,progress:p.questProgress,total:QUESTS[p.quest].count});
+    this.roomMembership(room);
     this.broadcast(room,{type:'notice',message:`${p.nickname} появился в саванне.`});
     return p;
   }
@@ -193,11 +194,13 @@ export class GameCore {
     this.store.leaveSession(room.id,p.id).catch(e=>this.log.error('membership leave',e.message));
     this.store.savePosition(p.id,p.x,p.z,p.heading).catch(e=>this.log.error('position save',e.message));
     this.store.saveHunger(p.id,p.hunger).catch(e=>this.log.error('hunger save',e.message));
+    this.roomMembership(room);
     this.broadcast(room,{type:'departed',id:p.id});
     if(room.visibility==='private'&&room.players.size===0)this.rooms.delete(room.id);
   }
   detach(peer){this.leave(peer);this.peers.delete(peer.id)}
   resetPlayer(player,spec,ranks={}){player.species=spec.code;player.model=spec.model;player.hp=spec.hp;player.maxHp=spec.hp;player.stamina=spec.stamina+12*(ranks?.endurance_rank||0);player.maxStamina=player.stamina;player.power=spec.power+2*(ranks?.power_rank||0);player.speed=Number(spec.speed)}
+  roomMembership(room){this.broadcast(room,{type:'session_members',members:[...room.players.values()].map(p=>({id:p.id,nickname:p.nickname,species:p.species}))})}
   broadcast(room,msg,filter=()=>true){for(const p of room.players.values())if(filter(p))this.emit(p.peer,msg)}
   async reward(p,amount,reason,key,xp=0){
     const result=await this.store.reward(p.id,amount,reason,key,xp);
