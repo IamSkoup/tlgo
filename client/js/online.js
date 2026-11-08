@@ -478,6 +478,12 @@ $('mobileJump').onclick=e=>{if(e.detail===0){sound.play('jump','effects',{volume
 $('attackButton').onclick=()=>scene.attack();$('gatherButton').onclick=()=>scene.gather();
 $('abilityButton').onclick=()=>scene.ability();
 $('talkButton').onclick=()=>scene.talk();
+if(matchMedia('(pointer: coarse)').matches){
+ $('hudMenu').textContent='Меню';
+ $('abilityButton').textContent='Умение';
+ $('gatherButton').textContent='Собрать';
+ $('talkButton').textContent='Диалог';
+}
 setInterval(()=>{
  if(!data.room||data.view!=='hud'||!data.ws||data.ws.readyState!==WebSocket.OPEN)return;
  const k=code=>keys.has(code)||mobile.has(code),lr=Number(k('KeyD'))-Number(k('KeyA'))+touchMove.x,ud=Number(k('KeyW'))-Number(k('KeyS'))+touchMove.y;
