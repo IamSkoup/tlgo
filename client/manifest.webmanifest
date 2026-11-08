@@ -1,0 +1,17 @@
+{
+  "id": "./",
+  "name": "Savanna Freedom Online",
+  "short_name": "Savanna Freedom",
+  "description": "Саванна, друзья, торговцы и жизнь прайда — в одном приложении.",
+  "lang": "ru",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#120f0d",
+  "theme_color": "#18120c",
+  "orientation": "any",
+  "icons": [
+    {"src":"icons/savanna-192.png","sizes":"192x192","type":"image/png","purpose":"any"},
+    {"src":"icons/savanna-512.png","sizes":"512x512","type":"image/png","purpose":"any maskable"}
+  ]
+}

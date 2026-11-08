@@ -9,7 +9,7 @@ const DEFAULT_PREFS={quality:'medium',renderScale:1,shadows:true,fpsLimit:0,came
 let storedPrefs={};try{storedPrefs=JSON.parse(localStorage.getItem('sf_game_settings')||'{}')}catch{}
 const prefs={...DEFAULT_PREFS,...storedPrefs};
 const savePrefs=()=>localStorage.setItem('sf_game_settings',JSON.stringify(prefs));
-const data={session:null,profile:null,species:[],owned:[],wallet:0,ledger:[],quests:[],friends:[],clan:null,party:null,partyInvites:[],activePanel:null,selectedFriend:null,directRows:[],directLoadedFor:null,room:null,me:null,playerObjects:new Map(),npcObjects:new Map(),resources:new Map(),serverQuest:null,questAim:null,ws:null,connecting:false,retry:0,desiredRoom:null,onboardIndex:0,view:'menu',quality:prefs.quality,pvp:prefs.pvp,wanted:0,roomWeather:0,abilityReady:true};
+const data={session:null,profile:null,species:[],owned:[],wallet:0,ledger:[],quests:[],friends:[],inventory:[],items:{},shops:{},hunger:100,selectedShop:null,sessionInvites:[],clan:null,party:null,partyInvites:[],activePanel:null,selectedFriend:null,directRows:[],directLoadedFor:null,room:null,me:null,playerObjects:new Map(),npcObjects:new Map(),resources:new Map(),serverQuest:null,questAim:null,ws:null,connecting:false,retry:0,desiredRoom:null,onboardIndex:0,view:'menu',quality:prefs.quality,pvp:prefs.pvp,wanted:0,roomWeather:0,abilityReady:true};
 addEventListener('pointerdown',()=>sound.start(),{once:true});
 const STARTERS=['lion','hyena','zebra','gazelle','warthog','monkey'];
 const COATS=[['Песочный','#d5a453'],['Медный','#c58a4b'],['Сухая трава','#b7a18a'],['Тёмная охра','#97816a'],['Пепельный','#96908b'],['Светлый','#e4dfce'],['Угольный','#6a5946'],['Золотистый','#d8b075']];
@@ -19,7 +19,7 @@ const TIPS=[
   'Опасные гиены охраняют свои тропы. Подойди и атакуй левой кнопкой мыши. Вблизи Скалы Прайда и лагеря новичков драться с игроками нельзя.',
   'В меню открой поручения от Кайона, Фули и Рафики. Если встретишь их лично, нажми R и поговори. Claws можно потратить на животных и развитие. Друзей приглашай через личную сессию.'
 ];
-const NPCS=[['kion','Кайон','lion',-45,0],['fuli','Фули','cheetah',-17,26],['jasiri','Джазири','hyena',146,-105],['simba','Симба','lion',-105,-88],['nala','Нала','lion',-92,-85],['kiara','Киара','lion',-91,-66],['bunga','Банга','badger',-40,15],['beshte','Бешти','hippo',70,47],['ono','Оно','bird',-40,-7],['anga','Анга','bird',-155,-150],['rafiki','Рафики','monkey',-102,91],['makini','Макини','monkey',-93,98],['zazu','Зазу','bird',-109,-78],['timon','Тимон','monkey',24,64],['pumbaa','Пумба','warthog',26,70],['janja','Джанджа','hyena',254,-144],['cheezi','Чизи','hyena',262,-157],['chungu','Чунгу','hyena',267,-148]];
+const NPCS=[['kion','Кайон','lion',-45,0],['fuli','Фули','cheetah',-17,26],['jasiri','Джазири','hyena',146,-105],['simba','Симба','lion',-105,-88],['nala','Нала','lion',-92,-85],['kiara','Киара','lion',-91,-66],['bunga','Банга','badger',-40,15],['beshte','Бешти','hippo',70,47],['ono','Оно','bird',-40,-7],['anga','Анга','bird',-155,-150],['rafiki','Рафики','monkey',-102,91],['makini','Макини','monkey',-93,98],['zazu','Зазу','bird',-109,-78],['timon','Тимон','monkey',24,64],['pumbaa','Пумба','warthog',26,70],['janja','Джанджа','hyena',254,-144],['cheezi','Чизи','hyena',262,-157],['chungu','Чунгу','hyena',267,-148],['shop-camp','Ньота · Припасы','gazelle',-61,50],['shop-water','Бахати · Водопой','monkey',82,41],['shop-tree','Макини · Травница','monkey',-82,105]];
 const escapeHtml=s=>String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;');
 const fmt=n=>Number(n||0).toLocaleString('ru-RU');
 const notify=(message,seconds=4)=>{const node=document.createElement('div');node.className='toast';node.textContent=message;$('toastHolder').prepend(node);setTimeout(()=>node.remove(),seconds*1000)};
@@ -79,7 +79,7 @@ class Auth {
  static async logout(){
   try{if(data.session)await this.call('logout','POST',null,data.session.access_token)}catch{}
   data.session=null;localStorage.removeItem('sf_auth_session');data.desiredRoom=null;
-  data.ws?.close();data.ws=null;data.room=null;data.profile=null;data.me=null;data.party=null;data.partyInvites=[];data.selectedFriend=null;data.directRows=[];scene.clearDynamic();
+  data.ws?.close();data.ws=null;data.room=null;data.profile=null;data.me=null;data.party=null;data.partyInvites=[];data.sessionInvites=[];data.inventory=[];data.selectedFriend=null;data.directRows=[];scene.clearDynamic();
   show('authScreen');connection('offline','Не в сети');$('signoutButton').classList.add('hidden');
  }
 }
@@ -101,6 +101,18 @@ $('resetForm').addEventListener('submit',async event=>{
  catch(e){$('resetError').textContent=e.message}finally{$('resetSubmit').disabled=false}
 });
 $('signoutButton').addEventListener('click',()=>Auth.logout());
+$('menuSignout').addEventListener('click',()=>Auth.logout());
+let deferredInstall=null;
+const installed=()=>matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;
+function updateInstallButton(){const button=$('installApp');button.classList.toggle('hidden',installed());button.textContent=deferredInstall?'Установить приложение':'Как установить приложение';}
+addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredInstall=e;updateInstallButton()});
+addEventListener('appinstalled',()=>{deferredInstall=null;updateInstallButton();notify('Приложение установлено.')});
+$('installApp').onclick=async()=>{
+ if(deferredInstall){const prompt=deferredInstall;deferredInstall=null;await prompt.prompt();await prompt.userChoice;updateInstallButton();return;}
+ notify(/iphone|ipad|ipod/i.test(navigator.userAgent)?'На iPhone: «Поделиться» → «На экран Домой».':'В Chrome или Edge открой меню браузера и выбери «Установить приложение» или «Добавить на главный экран».',9);
+};
+updateInstallButton();
+if('serviceWorker' in navigator)addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(error=>console.warn('PWA:',error.message)));
 
 function send(obj){if(data.ws?.readyState===WebSocket.OPEN){data.ws.send(JSON.stringify(obj));return true}notify('Связь с сервером отсутствует.');return false}
 async function connect(){
@@ -119,13 +131,18 @@ async function connect(){
 }
 function handleMessage(m){
  switch(m.type){
-  case 'hello':data.species=m.species||[];data.profile=m.profile;
+  case 'hello':data.species=m.species||[];data.profile=m.profile;data.shops=m.shops||{};data.items=m.items||{};
    connection('online','На связи');$('signoutButton').classList.remove('hidden');
    if(!data.profile){createStarterCards();show('creator')}else {show('menu');if(data.desiredRoom)send(data.desiredRoom);updateMenu();}break;
-  case 'account':data.profile=m.profile;data.wallet=Number(m.wallet||0);data.owned=m.owned||[];data.ledger=m.ledger||[];data.quests=m.quests||[];data.friends=m.friends||[];data.clan=m.clan||null;updateMenu();if(data.view==='creator'&&data.profile)show('menu');else if(data.view==='panel'&&['animals','appearance','history','friends','clan','quests'].includes(data.activePanel))openPanel(data.activePanel);break;
-  case 'joined':hideDeathScreen();data.room=m.room;data.me=m.you;data.party=null;data.partyInvites=[];data.serverQuest=null;data.desiredRoom=m.room.code?{type:'join',code:m.room.code}:{type:'join'};data.resources=new Map(m.resources.map(r=>[r.id,r]));data.serverQuests=m.quests;scene.syncResources();scene.resetCamera();show('hud');updateObjective();document.body.classList.add('ingame');$('chatChannel').value='session';$('chatHistory').replaceChildren();if(matchMedia('(pointer: coarse)').matches){$('chatBox').classList.add('chat-collapsed');$('chatToggle').textContent='Чат'}if(data.pvp)send({type:'pvp',enabled:true});notify('Сессия: '+m.room.name+(m.room.code?' · Код '+m.room.code:''),6);
+  case 'account':data.profile=m.profile;data.wallet=Number(m.wallet||0);data.owned=m.owned||[];data.ledger=m.ledger||[];data.quests=m.quests||[];data.friends=m.friends||[];data.inventory=m.inventory||[];data.clan=m.clan||null;updateMenu();if(data.view==='creator'&&data.profile)show('menu');else if(data.view==='panel'&&['animals','appearance','history','friends','clan','quests','inventory','shop','session'].includes(data.activePanel))openPanel(data.activePanel);break;
+  case 'joined':hideDeathScreen();data.room=m.room;data.me=m.you;data.party=null;data.partyInvites=[];data.serverQuest=null;data.desiredRoom=m.room.code?{type:'join',code:m.room.code}:{type:'join'};data.resources=new Map(m.resources.map(r=>[r.id,r]));data.serverQuests=m.quests;data.shops=m.shops||{};data.items=m.items||{};scene.syncResources();scene.resetCamera();show('hud');updateObjective();document.body.classList.add('ingame');$('chatChannel').value='session';$('chatHistory').replaceChildren();if(matchMedia('(pointer: coarse)').matches){$('chatBox').classList.add('chat-collapsed');$('chatToggle').textContent='Чат'}if(data.pvp)send({type:'pvp',enabled:true});notify('Сессия: '+m.room.name+(m.room.code?' · Код '+m.room.code:''),6);
    if(!localStorage.getItem('sf_onboard_'+data.me))showOnboard();break;
   case 'snapshot':scene.handleSnapshot(m);break;
+  case 'survival':data.hunger=m.hunger;updateHunger();break;
+  case 'shop_open':data.selectedShop=m.shop;openPanel('shop');break;
+  case 'session_invitation':data.sessionInvites=data.sessionInvites.filter(i=>i.code!==m.code);data.sessionInvites.push(m);notify(m.from+' зовёт в личную сессию. Приглашение в разделе «Личная сессия».',9);break;
+  case 'session_updated':if(data.room){data.room.name=m.name;data.room.code=m.code;data.desiredRoom={type:'join',code:m.code};if(data.view==='panel'&&data.activePanel==='session')openPanel('session');}break;
+  case 'session_kicked':data.room=null;data.desiredRoom=null;scene.clearDynamic();document.body.classList.remove('ingame');show('menu');notify(m.message,8);break;
   case 'hit':scene.hit(m);break;
   case 'resource':{const r=data.resources.get(m.id);if(r){r.readyAt=m.readyAt;const me=data.playerObjects.get(data.me);if(me&&S.dist(r,me)<9)sound.play('collect','effects',{volume:.48})}break}
   case 'quest_state':data.serverQuest=m.completed||m.abandoned?null:m;updateObjective();if(m.completed)notify('Поручение выполнено! Награда зачислена.',7);if(m.abandoned)notify('Поручение отменено. Можно взять другое.',5);break;
@@ -151,6 +168,12 @@ function handleMessage(m){
 }
 function updateMenu(){
  $('balanceTop').textContent=fmt(data.wallet)+' Claws';$('menuNickname').textContent=data.profile?`${data.profile.nickname} · Уровень ${data.profile.level} · ${speciesByCode(data.profile.selected_species)?.title||''}`:'Твой зверь ждёт тебя';
+}
+function updateHunger(){
+ const hunger=Math.max(0,Math.min(100,Number(data.hunger)||0));
+ $('hungerText').textContent=Math.round(hunger)+'%';
+ $('hungerBar').style.width=hunger+'%';
+ $('hungerBar').parentElement.classList.toggle('is-starving',hunger<20);
 }
 function updateWanted(){const badge=$('wantedBadge');badge.classList.toggle('hidden',data.wanted===0);badge.textContent='Розыск · '+['','I','II','III','IV','V'][data.wanted||0];}
 let dialogueTimer=null;
@@ -194,6 +217,7 @@ $('closePanel').addEventListener('click',resumeView);
 $('logo').addEventListener('click',()=>{if(data.room){send({type:'leave'});data.room=null;data.party=null;scene.clearDynamic();}show('menu')});
 $('accountButton').addEventListener('click',()=>openPanel('history'));
 $('hudMenu').addEventListener('click',()=>{if(data.room){show('menu');$('playPublic').textContent='Вернуться в саванну'}});
+$('hudBag').addEventListener('click',()=>openPanel('inventory'));
 $('playPublic').addEventListener('click',()=>{
  if(data.room){resumeView();return}data.desiredRoom={type:'join'};send(data.desiredRoom);
 });
@@ -203,7 +227,32 @@ function openPanel(kind){
  if(!data.profile){notify('Сначала создай персонажа.');return}
  data.activePanel=kind;
  const owned=new Set(data.owned.map(p=>p.species));
- if(kind==='animals'){
+ if(kind==='inventory'){
+  const bag=data.inventory.filter(row=>row.quantity>0);
+  setPanel('Рюкзак','ЕДА / ТРАВЫ / ЗАПАСЫ',`<div class="inventory-summary"><div><span class="badge">ГОЛОД</span><h3>${Math.round(data.hunger)}%</h3><p>Еда утоляет голод. Во время бега он растёт быстрее. При полном истощении ты постепенно теряешь здоровье.</p></div><div><span class="badge">ПРИПАСЫ</span><h3>${bag.reduce((sum,row)=>sum+row.quantity,0)} шт.</h3><p>Собирай лечебные травы или покупай припасы у торговцев, отмеченных на карте.</p></div></div><div class="panel-grid">${bag.map(row=>{const item=data.items[row.item_code];return item?`<div class="item-card supply-card"><span class="badge">${item.category==='medicine'?'ЛЕКАРСТВО':'ЕДА'}</span><h3>${escapeHtml(item.name)}</h3><p>${escapeHtml(item.description)}</p><p>${item.heal?'Лечит '+item.heal+' здоровья':'Сытость +'+item.hunger+'%'}</p><strong>В рюкзаке ${row.quantity}</strong><button class="primary" data-use-item="${item.code}">Использовать</button></div>`:''}).join('')||'<p class="muted">В рюкзаке пока пусто. Найди торговца или собери целебные травы.</p>'}</div><div class="setting-actions"><button id="bagMap" class="secondary">Торговцы на карте</button></div>`);
+  for(const button of $('panelContent').querySelectorAll('[data-use-item]'))button.onclick=()=>send({type:'item_use',item:button.dataset.useItem});
+  $('bagMap').onclick=()=>openPanel('map');
+ }else if(kind==='shop'){
+  const shop=data.shops[data.selectedShop];
+  if(!shop)return openPanel('map');
+  setPanel(shop.name,'ТОРГОВЕЦ / ПРИПАСЫ',`<p class="muted">${escapeHtml(shop.description)} Покупки списываются с твоего счёта на сервере. В кошельке ${fmt(data.wallet)} Claws.</p><div class="panel-grid">${shop.items.map(code=>{const item=data.items[code];if(!item)return '';return `<div class="item-card supply-card"><span class="badge">${item.category==='medicine'?'ЛЕЧЕНИЕ':'ЕДА'}</span><h3>${escapeHtml(item.name)}</h3><p>${escapeHtml(item.description)}</p><p>${item.heal?'Здоровье +'+item.heal:'Голод +'+item.hunger+'%'}</p><strong>${item.price} Claws</strong><button class="primary" data-buy-item="${item.code}" ${data.wallet<item.price?'disabled':''}>Купить за ${item.price}</button></div>`}).join('')}</div><div class="setting-actions"><button class="secondary" id="openBagFromShop">Открыть рюкзак</button><button class="ghost" id="leaveShop">Вернуться</button></div>`);
+  for(const button of $('panelContent').querySelectorAll('[data-buy-item]'))button.onclick=()=>send({type:'shop_buy',shop:data.selectedShop,item:button.dataset.buyItem});
+  $('openBagFromShop').onclick=()=>openPanel('inventory');$('leaveShop').onclick=resumeView;
+ }else if(kind==='session'){
+  const room=data.room,owner=room?.visibility==='private'&&room.owner===data.me;
+  const friends=data.friends.filter(f=>f.status==='accepted'&&f.other);
+  const members=[...data.playerObjects.values()].filter(p=>p.id!==data.me);
+  const invites=data.sessionInvites;
+  setPanel('Личная сессия','КОД / ДРУЗЬЯ / УПРАВЛЕНИЕ',`${invites.length?`<div class="item-card session-invites"><span class="badge">ПРИГЛАШЕНИЯ</span>${invites.map(i=>`<div class="panel-row"><div><strong>${escapeHtml(i.from)}</strong><small> зовёт в «${escapeHtml(i.name)}»</small></div><button class="primary" data-join-invite="${escapeHtml(i.code)}">Принять</button><button class="ghost" data-decline-invite="${escapeHtml(i.code)}">Скрыть</button></div>`).join('')}</div>`:''}${!room?'<div class="item-card"><h3>Ты ещё не в сессии</h3><p>Создай личную сессию в главном меню, затем пригласи друзей.</p></div>':room.visibility!=='private'?'<div class="item-card"><h3>Сейчас общая саванна</h3><p>Управление участниками доступно в собственной личной сессии. Вернись в меню и создай её.</p></div>':`<div class="item-card session-code"><span class="badge">${owner?'ТВОЯ ЛИЧНАЯ СЕССИЯ':'ЛИЧНАЯ СЕССИЯ ДРУГА'}</span><h3>${escapeHtml(room.name)}</h3><p>Поделись кодом, чтобы друзья смогли присоединиться.</p><div class="session-code-row"><code>${escapeHtml(room.code||'')}</code><button class="primary" id="copySessionCode">Скопировать код</button></div>${owner?'<button class="ghost" id="rotateSessionCode">Сменить код</button>':''}</div>${owner?`<div class="item-card"><h3>Управление</h3><p>Измени название и пригласи друзей, которые сейчас в сети.</p><div class="form-line"><input id="sessionName" value="${escapeHtml(room.name)}" maxlength="45" aria-label="Название личной сессии"><button id="renameSession" class="secondary">Сохранить</button></div></div>`:''}<h3 class="panel-section-title">Друзья</h3><div class="panel-list">${friends.map(f=>`<div class="panel-row"><strong>${escapeHtml(f.other.nickname)}</strong>${owner?`<button class="secondary" data-invite-friend="${escapeHtml(f.other.id)}">Пригласить</button>`:''}</div>`).join('')||'<p class="muted">Список друзей пока пуст. Найди игрока по нику и отправь заявку.</p>'}</div><button id="sessionFriends" class="secondary">Добавить друзей</button><h3 class="panel-section-title">Участники рядом</h3><div class="panel-list">${members.map(p=>`<div class="panel-row"><strong>${escapeHtml(p.name)}</strong>${owner?`<button class="ghost" data-kick-player="${escapeHtml(p.id)}">Исключить</button>`:''}</div>`).join('')||'<p class="muted">Других игроков сейчас не видно.</p>'}</div>`}`);
+  for(const button of $('panelContent').querySelectorAll('[data-join-invite]'))button.onclick=()=>{const code=button.dataset.joinInvite;data.sessionInvites=data.sessionInvites.filter(i=>i.code!==code);data.desiredRoom={type:'join',code};send(data.desiredRoom)};
+  for(const button of $('panelContent').querySelectorAll('[data-decline-invite]'))button.onclick=()=>{data.sessionInvites=data.sessionInvites.filter(i=>i.code!==button.dataset.declineInvite);openPanel('session')};
+  if($('copySessionCode'))$('copySessionCode').onclick=async()=>{try{await navigator.clipboard.writeText(room.code);notify('Код скопирован.')}catch{notify('Скопируй код вручную: '+room.code,8)}};
+  if($('rotateSessionCode'))$('rotateSessionCode').onclick=()=>{if(confirm('Старый код перестанет работать. Сменить?'))send({type:'session_rotate_code'})};
+  if($('renameSession'))$('renameSession').onclick=()=>send({type:'session_rename',name:$('sessionName').value.trim()});
+  if($('sessionFriends'))$('sessionFriends').onclick=()=>openPanel('friends');
+  for(const b of $('panelContent').querySelectorAll('[data-invite-friend]'))b.onclick=()=>send({type:'session_invite',userId:b.dataset.inviteFriend});
+  for(const b of $('panelContent').querySelectorAll('[data-kick-player]'))b.onclick=()=>{if(confirm('Исключить игрока из личной сессии?'))send({type:'session_kick',userId:b.dataset.kickPlayer})};
+ }else if(kind==='animals'){
   const html=`<p class="muted">Сначала выбери подходящий стиль. Сила не покупается за реальные деньги — только за заработанные Claws. Менять вид в саванне можно в безопасном лагере.</p><div class="panel-grid">${data.species.map(s=>{
    const mine=data.owned.find(o=>o.species===s.code),selected=data.profile.selected_species===s.code,price=s.starter?120:s.price;
    const btn=selected?'<button class="secondary" disabled>Сейчас играешь</button>':mine?`<button class="secondary" data-select="${s.code}">Выбрать</button>`:`<button class="primary" data-buy="${s.code}" ${data.wallet<price?'disabled':''}>Открыть · ${fmt(price)} Claws</button>`;
@@ -261,7 +310,7 @@ function openPanel(kind){
   setPanel('Твой след','ПРОФИЛЬ / CLAWS',`<div class="panel-grid"><div class="item-card"><span class="badge">УРОВЕНЬ ${data.profile.level}</span><h3>${escapeHtml(data.profile.nickname)}</h3><p>${escapeHtml(speciesByCode(data.profile.selected_species)?.title||'')} · Опыт ${fmt(data.profile.xp)} · Репутация ${data.profile.reputation}</p></div><div class="item-card"><span class="badge">КОШЕЛЁК</span><h3>${fmt(data.wallet)} Claws</h3><p>Заработаны внутри саванны. Реальных денег здесь нет.</p></div></div><h3 class="panel-section-title">Последние операции</h3><div class="panel-list">${data.ledger.map(l=>`<div class="panel-row"><div>${escapeHtml(l.reason)}<br><small>${new Date(l.created_at).toLocaleString('ru-RU')}</small></div><strong class="${l.delta>0?'tag':''}">${l.delta>0?'+':''}${fmt(l.delta)} Claws</strong></div>`).join('')||'<p class="muted">Здесь появятся первые операции.</p>'}</div>`);
  }else if(kind==='map'){
   const goal=data.questAim;
-  setPanel('Карта саванны','ЗЕМЛИ / 15 ЛОКАЦИЙ',`<p class="muted">${goal?`Твоя текущая цель — ${escapeHtml(goal.label)}. Золотая метка показывает, куда идти. `:''}Зелёные точки — лечебные травы, красные — опасные гиены. Нажми на карту, чтобы поставить свой ориентир.</p><canvas id="mapCanvas" class="map-canvas" width="700" height="700"></canvas>`);
+  setPanel('Карта саванны','ЗЕМЛИ / 15 ЛОКАЦИЙ',`<p class="muted">${goal?`Твоя текущая цель — ${escapeHtml(goal.label)}. Золотая метка показывает, куда идти. `:''}Оранжевые квадраты — магазины с персонажами, зелёные точки — лечебные травы, красные — опасные гиены. Нажми на карту, чтобы поставить ориентир.</p><canvas id="mapCanvas" class="map-canvas" width="700" height="700"></canvas><div class="shop-map-legend">${Object.values(data.shops).map(shop=>`<span>Лавка · ${escapeHtml(shop.name)} (${Math.round(shop.x)}, ${Math.round(shop.z)})</span>`).join('')}</div>`);
   const c=$('mapCanvas'),ctx=c.getContext('2d');drawMap(ctx,700,true);c.onclick=e=>{const r=c.getBoundingClientRect();scene.waypoint={x:(e.clientX-r.left)/r.width*700-350,z:(e.clientY-r.top)/r.height*700-350};notify('Ориентир установлен.');drawMap(ctx,700,true)};
  }else if(kind==='players'){
   const players=[...data.playerObjects.values()].filter(p=>p.id!==data.me);
@@ -357,6 +406,7 @@ class Scene {
    entry.homeX=x;entry.homeZ=z;entry.patrolSeed=index*1.83;this.attachLabel(entry,true);
    this.namedNPCs.push(entry);
   }
+  this.createShopStalls();
   this.resourceObjects=new Map();
   this.last=performance.now();this.yaw=2.5;this.pitch=.28;this.time=0;this.selfTarget=null;this.lastAudioUpdate=0;this.thunderAt=0;this.fpsFrames=0;this.fpsLast=performance.now();this.lastRendered=0;this.quality();this.animate=this.animate.bind(this);requestAnimationFrame(this.animate);
   addEventListener('resize',()=>{this.camera.aspect=innerWidth/innerHeight;this.camera.updateProjectionMatrix();this.renderer.setSize(innerWidth,innerHeight)});
@@ -392,6 +442,18 @@ class Scene {
   });
  }
  quality(){const low=data.quality==='low';const ratio=low?.72:data.quality==='high'?Math.min(devicePixelRatio,1.8):Math.min(devicePixelRatio,1.2);this.renderer.setPixelRatio(Math.max(.45,Math.min(2.2,ratio*prefs.renderScale)));this.renderer.shadowMap.enabled=!low&&prefs.shadows;this.sun.castShadow=!low&&prefs.shadows;this.world.grass.visible=!low&&!prefs.reducedEffects;this.renderer.setSize(innerWidth,innerHeight);$('fpsIndicator').classList.toggle('hidden',!prefs.showFps)}
+ createShopStalls(){
+  const wood=new T.MeshStandardMaterial({color:0x6e4831,roughness:1}),cloth=new T.MeshStandardMaterial({color:0xb57b45,roughness:1,side:T.DoubleSide}),goods=new T.MeshStandardMaterial({color:0x96a465,roughness:1});
+  for(const npc of this.namedNPCs.filter(n=>n.id.startsWith('npc-shop-'))){
+   const group=new T.Group(),add=(geometry,material,x,y,z)=>{const mesh=new T.Mesh(geometry,material);mesh.position.set(x,y,z);group.add(mesh)};
+   for(const x of [-1.45,1.45])for(const z of [-.9,.9])add(new T.CylinderGeometry(.10,.13,3.5,5),wood,x,1.75,z);
+   add(new T.ConeGeometry(2.4,1,4),cloth,0,3.85,0);
+   add(new T.BoxGeometry(2.8,.22,1.4),wood,0,1.25,.65);
+   for(let i=0;i<5;i++)add(new T.IcosahedronGeometry(.27,0),goods,-1+i*.46,1.55,.68);
+   group.position.set(npc.homeX+4,S.height(npc.homeX+4,npc.homeZ),npc.homeZ);
+   this.scene.add(group);
+  }
+ }
  addAnimal(id,name,species,x,z,named=false,color=null){
   const model=S.animal(species,id.startsWith('guard-')?'guard':id.replace('npc-',''),color??undefined);this.scene.add(model);
   const e={id,name,species,color,model,x,z,y:S.height(x,z),heading:0,hp:100,vx:0,vz:0,seed:Math.random()*6,dodge:0,attackAnim:0,state:'IDLE',named,target:{x,z},lastNet:0};
@@ -421,6 +483,7 @@ class Scene {
  resetCamera(){this.camera.position.set(-65,15,70);this.yaw=2.5;this.pitch=.26;this.localVelocity={x:0,z:0};this.cameraFocus=null}
  handleSnapshot(m){
   data.roomWeather=Number(m.weather??data.roomWeather);this.game.weather.index=data.roomWeather;
+  if(Number.isFinite(m.hunger)){data.hunger=m.hunger;updateHunger();}
   const displayHour=(18+this.time/75)%24;
   $('weather').textContent=(displayHour<5||displayHour>=21?'Ночь':displayHour<10?'Утро':displayHour<17?'День':'Закат')+' · '+(S.WEATHERS[data.roomWeather]||'Ясно');
   const current=new Set();for(const item of m.players){const p=Array.isArray(item)?{id:item[0],nickname:item[1],species:item[2],model:item[3],x:item[4],z:item[5],heading:item[6],hp:item[7],maxHp:item[8],stamina:item[9],maxStamina:item[10],wanted:item[11],abilityReady:item[12],jump:item[13],color:item[14]}:item;current.add(p.id);let e=data.playerObjects.get(p.id);
@@ -502,7 +565,7 @@ class Scene {
    const contact=this.namedNPCs.filter(n=>Math.hypot(me.x-n.x,me.z-n.z)<11).sort((a,b)=>S.dist(me,a)-S.dist(me,b))[0];
    $('talkButton').classList.toggle('hidden',!contact);
    $('talkPrompt').classList.toggle('hidden',!contact);
-   if(contact)$('talkPrompt').textContent=(matchMedia('(pointer: coarse)').matches?'Нажми «Диалог»':'R — поговорить')+' с '+contact.name;
+   if(contact)$('talkPrompt').textContent=contact.id.startsWith('npc-shop-')?(matchMedia('(pointer: coarse)').matches?'Нажми «Диалог»':'R')+' — открыть магазин '+contact.name:(matchMedia('(pointer: coarse)').matches?'Нажми «Диалог»':'R — поговорить')+' с '+contact.name;
    $('actionHint').textContent=near&&S.dist(near,me)<6?'E — собрать '+(near.type==='herb'?'травы':'древний след'):contact?'R — поговорить с '+contact.name:'WASD — движение · Shift — бег · E — собирать';
    const speed=Math.hypot(me.vx,me.vz);
    if(speed>1.5&&me.target?.jump!==true&&!me.swimming){const pond=this.world.waters.some(w=>Math.hypot(me.x-w.x,me.z-w.z)<w.r+6);const surface=pond||[3,4,5].includes(data.roomWeather)?'mud':Math.hypot(me.x-260,me.z+260)<90?'stone':me.x>90&&me.z< -65?'sand':'grass';sound.step(surface,speed>8)}
@@ -529,6 +592,7 @@ function drawMap(ctx,size,large){
  const scale=size/700,x=v=>(v+350)*scale,z=v=>(v+350)*scale;
  ctx.strokeStyle='#755637';ctx.lineWidth=large?6:2;for(const path of [[-105,-98,-45,0],[-45,0,76,26],[-45,0,-104,92],[76,26,140,-130],[140,-130,262,-280],[-104,92,30,155]]){ctx.beginPath();ctx.moveTo(x(path[0]),z(path[1]));ctx.lineTo(x(path[2]),z(path[3]));ctx.stroke()}
  for(const l of S.LOCATIONS){ctx.beginPath();ctx.fillStyle='#a97748';ctx.arc(x(l.x),z(l.z),large?5:2,0,Math.PI*2);ctx.fill();if(large){ctx.fillStyle='#e7c69c';ctx.font='11px Manrope,Arial';ctx.fillText(l.name,x(l.x)+9,z(l.z)+4)}}
+ for(const shop of Object.values(data.shops)){const px=x(shop.x),py=z(shop.z);ctx.fillStyle='#f7a549';ctx.fillRect(px-(large?7:3),py-(large?7:3),large?14:6,large?14:6);ctx.strokeStyle='#ffe4be';ctx.strokeRect(px-(large?7:3),py-(large?7:3),large?14:6,large?14:6);if(large){ctx.fillStyle='#ffe0a6';ctx.font='bold 12px Manrope,Arial';ctx.fillText(shop.name,px+13,py-9)}}
  for(const r of data.resources.values()){if(r.type!=='herb')continue;ctx.beginPath();ctx.fillStyle=Date.now()>=Number(r.readyAt||0)?'#8dbf7c':'#5e7059';ctx.arc(x(r.x),z(r.z),large?5:2.3,0,Math.PI*2);ctx.fill()}
  for(const enemy of data.npcObjects.values()){if(!enemy.id.startsWith('hyena-')||enemy.hp<=0||!enemy.model.visible)continue;ctx.beginPath();ctx.fillStyle='#d36d52';ctx.arc(x(enemy.x),z(enemy.z),large?5:2.3,0,Math.PI*2);ctx.fill()}
  const me=data.playerObjects.get(data.me);if(me){ctx.beginPath();ctx.fillStyle='#f7c783';ctx.arc(x(me.x),z(me.z),large?8:4,0,Math.PI*2);ctx.fill()}

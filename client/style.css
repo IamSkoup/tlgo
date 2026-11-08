@@ -56,3 +56,25 @@ em{font-family:'Playfair Display',Georgia,serif;font-style:italic;color:var(--go
 .quest-tracker-actions button[data-quest-action="abandon"]{background:#31241e;border-color:#825847;color:#d5b4a2}
 .quest-tracker-empty{color:#d9c4ae;font-size:11px;line-height:1.5}
 .quest-current{border-color:#d4a46e85}
+
+/* Supplies, merchants and install controls. */
+.menu-utility{display:flex;flex-wrap:wrap;gap:9px;margin-top:15px}
+.menu-utility button{font-size:11px;border-radius:9px;padding:11px 17px}
+.menu-utility #menuSignout{border:1px solid #885f4d7a;color:#e7b8a5;background:#241a15a8}
+.bar.hunger span{background:linear-gradient(90deg,#ca743e,#e8ba69)}
+.bar.hunger.is-starving span{background:#dd5546;animation:wantedpulse 1s infinite alternate}
+.supply-card strong{color:#f2c08b;display:block;margin:9px 0}
+.inventory-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin:0 0 22px}
+.inventory-summary>div{padding:18px 21px;border-radius:13px;background:linear-gradient(130deg,#49311e,#211913);border:1px solid #a8764870}
+.inventory-summary h3{margin:8px 0;font:34px 'Playfair Display',Georgia,serif;color:#ffe0b1}
+.inventory-summary p{font-size:12px;line-height:1.6;color:#c7b099;max-width:390px}
+.inventory-summary .badge{font-size:10px;letter-spacing:.13em;color:#e9b87d}
+.shop-map-legend{display:flex;flex-wrap:wrap;gap:10px;margin:15px 0;color:#f0c08b;font-size:11px}
+.shop-map-legend span{padding:8px 11px;background:#57351f78;border:1px solid #b7855170;border-radius:8px}
+.session-invites{margin-bottom:16px;border-color:#dea269}
+.session-code-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:15px 0}
+.session-code-row code{padding:13px 20px;border:1px dashed #e3b57c96;background:#15100dcf;border-radius:9px;color:#ffdea7;font-size:22px;letter-spacing:.12em;user-select:all}
+.session-code .ghost{margin-top:3px}
+@media(max-width:700px){.menu-utility{display:grid;grid-template-columns:1fr 1fr;gap:8px}.menu-utility button{padding:11px 8px;font-size:10px}.inventory-summary{grid-template-columns:1fr}.session-code-row code{font-size:18px}}
+@media(pointer:coarse){#hudBag{padding:9px 12px;font-size:11px;background:#332317df;white-space:nowrap}#hud .hud-top-right{gap:7px}}
+@media(pointer:coarse) and (orientation:portrait){#hudBag{padding:8px 11px}.hud-top-right{top:calc(env(safe-area-inset-top) + 8px)}}

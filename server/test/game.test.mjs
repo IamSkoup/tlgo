@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {GameCore} from '../src/game.mjs';
 import {FakeStore} from './fixtures.mjs';
 import {distance,validateInput,ROOM_LIMIT} from '../src/rules.mjs';
+import {hungerAfter,SHOP_ITEMS,SHOPS} from '../src/survival.mjs';
 
 const id1='11111111-1111-4111-8111-111111111111',id2='22222222-2222-4222-8222-222222222222';
 async function fixture(){
@@ -50,10 +51,71 @@ test('forged teleport, damage, money, and diagonal speed are rejected or ignored
 test('resources require proximity, cool down, and reward idempotently',async()=>{
  const f=await fixture();f.peerA.player.x=-77;f.peerA.player.z=60;
  await f.engine.command(f.peerA,{type:'gather',id:'herb-a'});assert.equal(f.store.wallet(id1),74);
+ assert.equal(f.store.inventory(id1).find(row=>row.item_code==='herb')?.quantity,1);
  await f.engine.command(f.peerA,{type:'gather',id:'herb-a'});assert.equal(f.store.wallet(id1),74);
  await f.engine.command(f.peerB,{type:'gather',id:'herb-a'});assert.equal(f.store.wallet(id2),60);
  const event=f.store.ledger(id1).at(-1).event_key;
  await f.store.reward(id1,14,'Plants',event);assert.equal(f.store.wallet(id1),74);
+});
+
+test('hunger drains with movement, runs down faster while sprinting, and survives joining again',async()=>{
+ assert.equal(hungerAfter(100,100,false),93.5);
+ assert.ok(hungerAfter(100,100,true)<hungerAfter(100,100,false));
+ const f=await fixture();const p=f.peerA.player;
+ await f.engine.command(f.peerA,{type:'input',x:1,z:0,sprint:true});
+ f.tick(5000);assert.ok(p.hunger<100);
+ const saved=p.hunger;await f.engine.command(f.peerA,{type:'leave'});await f.engine.command(f.peerA,{type:'join'});
+ assert.ok(Math.abs(f.peerA.player.hunger-saved)<.02);
+ f.peerA.player.hunger=0;f.peerA.player.starveAt=0;const hp=f.peerA.player.hp;
+ f.tick(1000);assert.ok(f.peerA.player.hp<hp);
+});
+
+test('NPC shops require location and valid stock; inventory items are spent once',async()=>{
+ const f=await fixture();const p=f.peerA.player;
+ assert.ok(SHOPS['shop-camp'].items.includes('berries'));
+ assert.equal(SHOP_ITEMS.berries.hunger,22);
+ p.x=10;p.z=10;
+ await f.engine.command(f.peerA,{type:'shop_buy',shop:'shop-camp',item:'berries'});
+ assert.equal(f.store.wallet(id1),60);
+ p.x=-61;p.z=50;
+ await f.engine.command(f.peerA,{type:'interact',contact:'shop-camp'});
+ assert.ok(f.a.some(m=>m.type==='shop_open'&&m.shop==='shop-camp'));
+ await f.engine.command(f.peerA,{type:'shop_buy',shop:'shop-camp',item:'herb'});
+ assert.equal(f.store.wallet(id1),60);
+ await f.engine.command(f.peerA,{type:'shop_buy',shop:'shop-camp',item:'berries'});
+ assert.equal(f.store.wallet(id1),48);
+ assert.equal(f.store.inventory(id1)[0].quantity,1);
+ p.hunger=40;await f.engine.command(f.peerA,{type:'item_use',item:'berries'});
+ assert.equal(p.hunger,62);
+ assert.deepEqual(f.store.inventory(id1),[]);
+ const hunger=p.hunger;
+ f.setTime(f.now()+800);
+ await assert.rejects(()=>f.engine.command(f.peerA,{type:'item_use',item:'berries'}),/закончился/);
+ assert.equal(p.hunger,hunger);
+ await f.engine.command(f.peerA,{type:'leave'});await f.engine.command(f.peerA,{type:'join'});
+ assert.equal(f.peerA.player.hunger,62);
+});
+
+test('private session owner can invite friends, change name and code, and exclude players',async()=>{
+ const f=await fixture();await f.engine.command(f.peerA,{type:'friend_request',nickname:'Fleet'});
+ await f.engine.command(f.peerB,{type:'friend_accept',userId:id1});
+ await f.engine.command(f.peerA,{type:'join',private:true});
+ const oldCode=f.peerA.room.code;
+ await f.engine.command(f.peerB,{type:'session_rename',name:'Чужая сессия'});
+ assert.notEqual(f.peerA.room.name,'Чужая сессия');
+ await f.engine.command(f.peerA,{type:'session_invite',userId:id2});
+ assert.ok(f.b.some(m=>m.type==='session_invitation'&&m.code===oldCode));
+ await f.engine.command(f.peerB,{type:'join',code:oldCode});
+ await f.engine.command(f.peerA,{type:'session_rename',name:'Наш лес'});
+ assert.equal(f.peerA.room.name,'Наш лес');
+ await f.engine.command(f.peerA,{type:'session_rotate_code'});
+ assert.notEqual(f.peerA.room.code,oldCode);
+ assert.ok(f.b.some(m=>m.type==='session_updated'&&m.name==='Наш лес'));
+ await f.engine.command(f.peerA,{type:'session_kick',userId:id2});
+ assert.equal(f.peerB.room,null);
+ assert.ok(f.b.some(m=>m.type==='session_kicked'));
+ await f.engine.command(f.peerB,{type:'join',code:f.peerA.room.code});
+ assert.equal(f.peerB.room,null);
 });
 
 test('quest is rewarded once, not each time it is repeated',async()=>{

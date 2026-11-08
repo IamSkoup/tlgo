@@ -28,6 +28,12 @@ export class SupabaseStore {
   async owned(id){return unwrap(await this.api.from('player_species').select('*').eq('user_id',id));}
   async ledger(id){return unwrap(await this.api.from('ledger').select('delta,reason,created_at,event_key').eq('user_id',id).order('created_at',{ascending:false}).limit(25));}
   async quests(id){return unwrap(await this.api.from('quest_progress').select('*').eq('user_id',id));}
+  async inventory(id){return unwrap(await this.api.from('inventory').select('item_code,quantity').eq('user_id',id));}
+  async hunger(id){const row=unwrap(await this.api.from('player_survival').select('hunger').eq('user_id',id).maybeSingle());return row?Number(row.hunger):100;}
+  async saveHunger(id,hunger){return unwrap(await this.api.rpc('sf_save_hunger',{p_user:id,p_hunger:Math.max(0,Math.min(100,hunger))}));}
+  async buyItem(id,item,eventKey){return unwrap(await this.api.rpc('sf_shop_buy',{p_user:id,p_item:item,p_event_key:eventKey}));}
+  async grantItem(id,item){return unwrap(await this.api.rpc('sf_grant_item',{p_user:id,p_item:item}));}
+  async consumeItem(id,item){return unwrap(await this.api.rpc('sf_consume_item',{p_user:id,p_item:item}));}
   async position(id){return unwrap(await this.api.from('player_positions').select('x,z,heading').eq('user_id',id).maybeSingle());}
   async savePosition(id,x,z,heading){
     return unwrap(await this.api.from('player_positions').upsert({user_id:id,x:Math.round(x*100)/100,z:Math.round(z*100)/100,heading:Math.round(heading*1000)/1000,saved_at:new Date().toISOString()}));
@@ -67,6 +73,8 @@ export class SupabaseStore {
   }
   async createSession(record){return unwrap(await this.api.from('game_sessions').insert(record));}
   async findSession(code){return unwrap(await this.api.from('game_sessions').select('*').eq('invite_code',code).maybeSingle());}
+  async renameSession(id,name){return unwrap(await this.api.from('game_sessions').update({name}).eq('id',id).eq('visibility','private').select('id').single());}
+  async rotateSessionCode(id,code){return unwrap(await this.api.from('game_sessions').update({invite_code:code}).eq('id',id).eq('visibility','private').select('id').single());}
   async joinSession(session_id,user_id){return unwrap(await this.api.from('session_members').upsert({session_id,user_id}));}
   async leaveSession(session_id,user_id){return unwrap(await this.api.from('session_members').delete().eq('session_id',session_id).eq('user_id',user_id));}
   async friends(id){

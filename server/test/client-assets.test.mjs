@@ -22,6 +22,21 @@ test('browser entry includes existing local scripts, styles and navigable legacy
   assert.match(html,/id="dialogueBox"/);
 });
 
+test('PWA manifest, icons, service worker, install and mobile logout are available',async()=>{
+ const html=await read('client/index.html'),script=await read('client/js/online.js'),sw=await read('client/sw.js');
+ const manifest=JSON.parse(await read('client/manifest.webmanifest'));
+ assert.match(html,/rel="manifest" href="manifest\.webmanifest"/);
+ assert.match(html,/id="menuSignout"/);
+ assert.match(html,/id="hudBag"/);
+ assert.match(script,/navigator\.serviceWorker\.register\('\.\/sw\.js'\)/);
+ assert.match(script,/beforeinstallprompt/);
+ assert.match(script,/\$\('menuSignout'\)\.addEventListener\('click',\(\)=>Auth\.logout\(\)\)/);
+ assert.equal(manifest.display,'standalone');assert.equal(manifest.start_url,'./');assert.equal(manifest.scope,'./');
+ for(const icon of manifest.icons){const buf=await readFile(resolve(root,'client',icon.src));assert.equal(buf.toString('hex',0,8),'89504e470d0a1a0a');}
+ assert.match(sw,/caches\.open\(CACHE\)/);
+ assert.match(sw,/request\.mode==='navigate'/);
+});
+
 test('every directly referenced browser element exists on the page or in a panel template',async()=>{
   const html=await read('client/index.html'),client=await read('client/js/online.js');
   const allIds=new Set([...html.matchAll(/\bid="([\w-]+)"/g),...client.matchAll(/\bid="([\w-]+)"/g)].map(m=>m[1]));

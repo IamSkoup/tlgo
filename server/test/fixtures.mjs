@@ -1,10 +1,10 @@
 export class FakeStore {
-  constructor(){this.players=new Map();this.wallets=new Map();this.ownedMap=new Map();this.positions=new Map();this.questMap=new Map();this.ledgers=new Map();this.friendsMap=[];this.sessions=new Map();this.clanMap=new Map();this.chatRows=[];this.speciesList=[
+  constructor(){this.players=new Map();this.wallets=new Map();this.ownedMap=new Map();this.positions=new Map();this.questMap=new Map();this.ledgers=new Map();this.friendsMap=[];this.sessions=new Map();this.clanMap=new Map();this.chatRows=[];this.inventoryMap=new Map();this.hungerMap=new Map();this.speciesList=[
     {code:'lion',title:'Лев',model:'lion',starter:true,price:0,hp:130,stamina:110,speed:8.2,power:20},
     {code:'zebra',title:'Зебра',model:'zebra',starter:true,price:0,hp:145,stamina:135,speed:10.8,power:14},
     {code:'cheetah',title:'Гепард',model:'cheetah',starter:false,price:320,hp:90,stamina:95,speed:16.5,power:16}
   ]}
-  add(id,nickname,species='lion'){const profile={id,nickname,selected_species:species,color:12945995,level:1,xp:0,reputation:0};this.players.set(id,profile);this.wallets.set(id,60);this.ownedMap.set(id,[{species,power_rank:0,endurance_rank:0}]);this.questMap.set(id,[]);this.ledgers.set(id,new Map());return profile}
+  add(id,nickname,species='lion'){const profile={id,nickname,selected_species:species,color:12945995,level:1,xp:0,reputation:0};this.players.set(id,profile);this.wallets.set(id,60);this.ownedMap.set(id,[{species,power_rank:0,endurance_rank:0}]);this.questMap.set(id,[]);this.ledgers.set(id,new Map());this.inventoryMap.set(id,new Map());this.hungerMap.set(id,100);return profile}
   verify(token){if(!this.players.has(token))throw Error('Недействительная сессия.');return {id:token}}
   profile(id){return this.players.get(id)||null}
   species(){return this.speciesList}
@@ -12,6 +12,12 @@ export class FakeStore {
   owned(id){return this.ownedMap.get(id)}
   ledger(id){return [...this.ledgers.get(id)?.values()||[]]}
   quests(id){return this.questMap.get(id)}
+  inventory(id){return [...(this.inventoryMap.get(id)||new Map())].map(([item_code,quantity])=>({item_code,quantity}))}
+  hunger(id){return this.hungerMap.get(id)??100}
+  async saveHunger(id,hunger){this.hungerMap.set(id,Math.round(hunger*100)/100)}
+  async buyItem(id,item,eventKey){const catalog={berries:12,meat:24,fish:19,fruit:15,herb:28},price=catalog[item];if(!price)throw Error('Unknown item');await this.reward(id,-price,'Shop '+item,eventKey);await this.grantItem(id,item)}
+  async grantItem(id,item){const bag=this.inventoryMap.get(id);bag.set(item,(bag.get(item)||0)+1);return bag.get(item)}
+  async consumeItem(id,item){const bag=this.inventoryMap.get(id),count=bag?.get(item)||0;if(!count)throw Error('Предмет закончился');if(count===1)bag.delete(item);else bag.set(item,count-1);return count-1}
   position(id){return this.positions.get(id)||null}
   async savePosition(id,x,z,heading){this.positions.set(id,{x,z,heading})}
   async createProfile(id,nickname,species){if(this.players.has(id))throw Error('Already created');if([...this.players.values()].some(p=>p.nickname.toLowerCase()===nickname.toLowerCase()))throw Error('Nickname used');if(!this.speciesList.some(s=>s.code===species&&s.starter))throw Error('Not starter');this.add(id,nickname,species)}
@@ -36,6 +42,8 @@ export class FakeStore {
   async setQuest(id,quest_id,progress,state){const arr=this.questMap.get(id);const ix=arr.findIndex(q=>q.quest_id===quest_id);const value={quest_id,progress,state};if(ix<0)arr.push(value);else arr[ix]=value}
   async abandonQuest(id,quest_id){const arr=this.questMap.get(id);const index=arr.findIndex(q=>q.quest_id===quest_id&&q.state==='active');if(index<0)return [];return arr.splice(index,1)}
   findSession(code){return [...this.sessions.values()].find(r=>r.invite_code===code)}
+  renameSession(id,name){this.sessions.get(id).name=name}
+  rotateSessionCode(id,code){this.sessions.get(id).invite_code=code}
   createSession(r){this.sessions.set(r.id,r)}
   joinSession(){return null}
   async leaveSession(){return null}

@@ -1,6 +1,7 @@
 import { randomUUID, randomBytes } from 'node:crypto';
 import { TICK_RATE, SNAPSHOT_RATE, ROOM_LIMIT, PUBLIC_ROOM_ID, MAX_COORD, SPAWN, QUESTS, COOP_OPERATION, CONTACTS, RESOURCES, NPC_DEFS, distance, safe, clamp, cleanText, validateInput } from './rules.mjs';
 import {resolveTerrain} from './terrain.mjs';
+import {SHOPS,SHOP_ITEMS,hungerAfter,itemEffect} from './survival.mjs';
 
 // All inbound commands are intents. World coordinates, HP, damage and rewards
 // are never accepted from the client as authoritative facts.
@@ -10,7 +11,7 @@ export class GameCore {
     this.rooms.set(PUBLIC_ROOM_ID,this.createRoom(PUBLIC_ROOM_ID,'Общая саванна','public',null,null));
   }
   createRoom(id,name,visibility,owner,code) {
-    return { id,name,visibility,owner,code,epoch:randomUUID(),weather:0,weatherChangedAt:this.clock(),players:new Map(),parties:new Map(),npcs:new Map(NPC_DEFS.map(n=>[n.id,{...n,home:{x:n.x,z:n.z},maxHp:n.hp,deadUntil:0,spawn:0,aggro:null,damage:new Map(),vx:0,vz:0}])),resources:new Map(RESOURCES.map(n=>[n.id,{...n,readyAt:0}])),chat:[] };
+    return { id,name,visibility,owner,code,blocked:new Set(),epoch:randomUUID(),weather:0,weatherChangedAt:this.clock(),players:new Map(),parties:new Map(),npcs:new Map(NPC_DEFS.map(n=>[n.id,{...n,home:{x:n.x,z:n.z},maxHp:n.hp,deadUntil:0,spawn:0,aggro:null,damage:new Map(),vx:0,vz:0}])),resources:new Map(RESOURCES.map(n=>[n.id,{...n,readyAt:0}])),chat:[] };
   }
   emit(peer,obj) { try {peer.send(obj)}catch(error){this.log.error('send failed',error.message)} }
   error(peer,message){this.emit(peer,{type:'error',message})}
@@ -20,18 +21,18 @@ export class GameCore {
     this.peers.set(id,peer);
     const profile=await this.store.profile(user.id);
     peer.playerProfile=profile;
-    this.emit(peer,{type:'hello',profile, species:await this.store.species(), serverTime:this.clock()});
+    this.emit(peer,{type:'hello',profile, species:await this.store.species(),shops:SHOPS,items:SHOP_ITEMS,serverTime:this.clock()});
     if(profile)await this.refresh(peer);
     return peer;
   }
   async refresh(peer){
     peer.playerProfile=await this.store.profile(peer.user.id);
-    const [wallet,owned,ledger,quests,friends,clan]=await Promise.all([
+    const [wallet,owned,ledger,quests,friends,clan,inventory]=await Promise.all([
       this.store.wallet(peer.user.id),this.store.owned(peer.user.id),this.store.ledger(peer.user.id),
-      this.store.quests(peer.user.id),this.store.friends(peer.user.id),this.store.clan(peer.user.id)
+      this.store.quests(peer.user.id),this.store.friends(peer.user.id),this.store.clan(peer.user.id),this.store.inventory(peer.user.id)
     ]);
     peer.clan=clan;
-    this.emit(peer,{type:'account',profile:peer.playerProfile,wallet,owned,ledger,quests,friends,clan});
+    this.emit(peer,{type:'account',profile:peer.playerProfile,wallet,owned,ledger,quests,friends,clan,inventory});
   }
   rate(peer,key,ms){const now=this.clock(),last=peer.actions.get(key)||0;if(now-last<ms)return false;peer.actions.set(key,now);return true}
   async command(peer,msg){
@@ -68,6 +69,12 @@ export class GameCore {
       case 'interact':return this.interact(peer,cleanText(msg.contact,32));
       case 'quest':return this.quest(peer,cleanText(msg.id,32));
       case 'quest_abandon':return this.abandonQuest(peer);
+      case 'shop_buy':return this.buyShopItem(peer,cleanText(msg.shop,32),cleanText(msg.item,32));
+      case 'item_use':return this.useItem(peer,cleanText(msg.item,32));
+      case 'session_invite':return this.sessionInvite(peer,cleanText(msg.userId,64));
+      case 'session_kick':return this.sessionKick(peer,cleanText(msg.userId,64));
+      case 'session_rename':return this.sessionRename(peer,cleanText(msg.name,45));
+      case 'session_rotate_code':return this.sessionRotateCode(peer);
       case 'chat':return this.chat(peer,msg);
       case 'chat_history':return this.chatHistory(peer,msg.scope);
       case 'dm_history':return this.dmHistory(peer,cleanText(msg.userId,64));
@@ -156,22 +163,23 @@ export class GameCore {
       this.rooms.set(id,this.createRoom(id,'Личная саванна','private',peer.user.id,code));target=id;
     }
     let room=this.rooms.get(target);
+    if(room.blocked.has(peer.user.id))return this.error(peer,'Владелец ограничил доступ к этой сессии.');
     if(room.players.size>=ROOM_LIMIT)return this.error(peer,'Сессия заполнена.');
     if(peer.room)this.leave(peer);
     await this.store.joinSession(room.id,peer.user.id);
     const species=(await this.store.species()).find(s=>s.code===peer.playerProfile.selected_species);
     if(!species)throw Error('Selected species not found');
-    const saved=await this.store.position(peer.user.id);
+    const [saved,hunger]=await Promise.all([this.store.position(peer.user.id),this.store.hunger(peer.user.id)]);
     const p={id:peer.user.id,nickname:peer.playerProfile.nickname,species:species.code,model:species.model,color:peer.playerProfile.color,
       x:clamp(Number(saved?.x) || SPAWN.x,-MAX_COORD,MAX_COORD),z:clamp(Number(saved?.z)||SPAWN.z,-MAX_COORD,MAX_COORD),
       heading:0,vx:0,vz:0,hp:species.hp,maxHp:species.hp,stamina:species.stamina,maxStamina:species.stamina,
       power:species.power,speed:Number(species.speed),input:{x:0,z:0,sprint:false,jump:false},jumpUntil:0,
-      pvp:false,lastAttack:0,abilityUntil:0,abilityCooldown:0,wanted:0,lastCrime:0,wantedDecayAt:0,nextGuardWave:0,deathCount:0,peer,quest:null,questProgress:0,visitIndex:0,deathUntil:0,level:peer.playerProfile.level};
+      pvp:false,lastAttack:0,abilityUntil:0,abilityCooldown:0,wanted:0,lastCrime:0,wantedDecayAt:0,nextGuardWave:0,deathCount:0,peer,quest:null,questProgress:0,visitIndex:0,deathUntil:0,level:peer.playerProfile.level,hunger};
     const ranks=(await this.store.owned(peer.user.id)).find(o=>o.species===species.code);this.resetPlayer(p,species,ranks);
     const unfinished=(await this.store.quests(peer.user.id)).find(q=>q.state==='active'&&QUESTS[q.quest_id]);
     if(unfinished){p.quest=unfinished.quest_id;p.questProgress=Math.min(QUESTS[p.quest].count,unfinished.progress);p.visitIndex=p.questProgress}
     peer.room=room;peer.player=p;room.players.set(p.id,p);
-    this.emit(peer,{type:'joined',room:{id:room.id,name:room.name,code:room.code,visibility:room.visibility},you:p.id,resources:[...room.resources.values()],quests:QUESTS});
+    this.emit(peer,{type:'joined',room:{id:room.id,name:room.name,code:room.code,visibility:room.visibility,owner:room.owner},you:p.id,resources:[...room.resources.values()],quests:QUESTS,shops:SHOPS,items:SHOP_ITEMS});
     this.store.chatHistory('session_id',room.id).then(rows=>this.emit(peer,{type:'chat_history',channel:'session',rows:rows.map(r=>({author:room.players.get(r.author)?.nickname||'Игрок',body:r.body,time:r.created_at}))})).catch(e=>this.log.error('session history',e.message));
     if(p.quest)this.emit(peer,{type:'quest_state',id:p.quest,progress:p.questProgress,total:QUESTS[p.quest].count});
     this.broadcast(room,{type:'notice',message:`${p.nickname} появился в саванне.`});
@@ -184,6 +192,7 @@ export class GameCore {
     room.players.delete(p.id);peer.room=null;peer.player=null;
     this.store.leaveSession(room.id,p.id).catch(e=>this.log.error('membership leave',e.message));
     this.store.savePosition(p.id,p.x,p.z,p.heading).catch(e=>this.log.error('position save',e.message));
+    this.store.saveHunger(p.id,p.hunger).catch(e=>this.log.error('hunger save',e.message));
     this.broadcast(room,{type:'departed',id:p.id});
     if(room.visibility==='private'&&room.players.size===0)this.rooms.delete(room.id);
   }
@@ -234,11 +243,17 @@ export class GameCore {
     r.readyAt=this.clock()+45000;
     this.broadcast(peer.room,{type:'resource',id,readyAt:r.readyAt});
     await this.reward(p,r.type==='relic'?30:14,r.type==='relic'?'Древний след':'Целебные травы',`resource:${peer.room.epoch}:${id}:${r.readyAt}`,15);
+    if(r.type==='herb'){await this.store.grantItem(p.id,'herb');await this.refresh(peer);this.emit(peer,{type:'notice',message:'Лечебные травы добавлены в инвентарь.'});}
     if(r.type==='herb')await this.progressQuest(p,'gather');
     if(r.type==='herb')await this.partyProgress(p,'gather',r,`herb:${id}:${r.readyAt}`);
   }
   async interact(peer,id){
-    const p=peer.player,contact=CONTACTS[id];
+    const p=peer.player,shop=SHOPS[id],contact=CONTACTS[id];
+    if(shop){
+      if(!p||distance(p,shop)>12)return this.error(peer,'Подойди ближе к торговцу.');
+      if(!this.rate(peer,'interact',600))return;
+      this.emit(peer,{type:'shop_open',shop:id,items:shop.items});return;
+    }
     if(!p||!contact)return this.error(peer,'Здесь не с кем разговаривать.');
     if(distance(p,contact)>16)return this.error(peer,'Подойди ближе к собеседнику.');
     if(!this.rate(peer,'interact',600))return;
@@ -247,6 +262,63 @@ export class GameCore {
     let line=contact.lines[Math.floor(this.clock()/8000)%contact.lines.length];
     if(p.wanted>=2&&['kion','simba','nala'].includes(id))line='Здесь тебя ищут. Отойди, успокойся и не создавай новых проблем.';
     this.emit(peer,{type:'dialogue',contact:id,name:contact.name,text:line,quest:p.wanted>=2?null:contact.quest&&!complete?contact.quest:null,completed:complete});
+  }
+  async buyShopItem(peer,shopId,itemCode){
+    const p=peer.player,shop=SHOPS[shopId],item=SHOP_ITEMS[itemCode];
+    if(!p||p.hp<=0||!shop||!item||!shop.items.includes(itemCode)||distance(p,shop)>12)return this.error(peer,'Торговец далеко или такого товара здесь нет.');
+    if(!this.rate(peer,'shop_buy',350))return;
+    await this.store.buyItem(p.id,itemCode,`shop:${randomUUID()}`);
+    await this.refresh(peer);
+    this.emit(peer,{type:'notice',message:`Куплено: ${item.name}. Открой инвентарь, чтобы использовать.`});
+  }
+  async useItem(peer,itemCode){
+    const p=peer.player,item=SHOP_ITEMS[itemCode];
+    if(!p||p.hp<=0||!item)return this.error(peer,'Этот предмет сейчас недоступен.');
+    if(!this.rate(peer,'item_use',700))return;
+    const effect=itemEffect(item,p.hunger,p.hp,p.maxHp);
+    if(effect.hunger<=p.hunger&&effect.hp<=p.hp)return this.error(peer,'Сейчас этот предмет ничего не восстановит.');
+    await this.store.consumeItem(p.id,itemCode);
+    p.hunger=effect.hunger;p.hp=effect.hp;
+    await this.store.saveHunger(p.id,p.hunger);
+    await this.refresh(peer);
+    this.emit(peer,{type:'survival',hunger:Math.round(p.hunger),hp:Math.round(p.hp)});
+    this.emit(peer,{type:'notice',message:`Использовано: ${item.name}.`});
+  }
+  sessionOwner(peer){return peer.room?.visibility==='private'&&peer.room.owner===peer.user.id}
+  async sessionInvite(peer,userId){
+    if(!this.sessionOwner(peer))return this.error(peer,'Приглашать в личную сессию может только её владелец.');
+    if(!this.rate(peer,'session_invite',700))return;
+    const friend=(await this.store.friends(peer.user.id)).find(f=>f.status==='accepted'&&f.other?.id===userId);
+    if(!friend)return this.error(peer,'Сначала добавь этого игрока в друзья.');
+    const online=[...this.peers.values()].filter(other=>other.user.id===userId);
+    if(!online.length)return this.error(peer,'Друг сейчас не в сети. Код можно отправить ему отдельно.');
+    for(const target of online)this.emit(target,{type:'session_invitation',from:peer.playerProfile.nickname,fromId:peer.user.id,code:peer.room.code,name:peer.room.name});
+    this.emit(peer,{type:'notice',message:'Приглашение отправлено '+friend.other.nickname+'.'});
+  }
+  sessionKick(peer,userId){
+    if(!this.sessionOwner(peer))return this.error(peer,'Исключать игроков может только владелец сессии.');
+    if(userId===peer.user.id)return this.error(peer,'Себя исключить нельзя.');
+    const room=peer.room,target=room.players.get(userId);
+    if(!target)return this.error(peer,'Игрок не находится в этой сессии.');
+    room.blocked.add(userId);
+    this.leave(target.peer);
+    this.emit(target.peer,{type:'session_kicked',message:'Владелец исключил тебя из сессии.'});
+    this.emit(peer,{type:'notice',message:'Игрок '+target.nickname+' исключён.'});
+  }
+  async sessionRename(peer,name){
+    if(!this.sessionOwner(peer))return this.error(peer,'Только владелец может менять название сессии.');
+    if(name.length<3||name.length>45)return this.error(peer,'Название должно содержать от 3 до 45 символов.');
+    await this.store.renameSession(peer.room.id,name);
+    peer.room.name=name;
+    this.broadcast(peer.room,{type:'session_updated',name,code:peer.room.code});
+  }
+  async sessionRotateCode(peer){
+    if(!this.sessionOwner(peer))return this.error(peer,'Только владелец может менять код сессии.');
+    const code=randomBytes(4).toString('hex').toUpperCase();
+    await this.store.rotateSessionCode(peer.room.id,code);
+    peer.room.code=code;
+    this.broadcast(peer.room,{type:'session_updated',name:peer.room.name,code});
+    this.emit(peer,{type:'notice',message:'Код изменён. Старый код больше не работает.'});
   }
   partyFor(peer){if(!peer.room)return null;return [...peer.room.parties.values()].find(p=>p.members.has(peer.user.id))||null}
   partyBroadcast(party,msg){for(const id of party.members){const p=party.room.players.get(id);if(p)this.emit(p.peer,msg)}}
@@ -451,7 +523,12 @@ export class GameCore {
         if(now-p.peer.lastInputAt>500)p.input={x:0,z:0,sprint:false,jump:false};
         const input=p.input;let speed=p.speed;
         if(now<p.abilityUntil)speed*=1.23;
-        if(input.sprint&&p.stamina>1){speed*=1.5;p.stamina=Math.max(0,p.stamina-15*dt)}else p.stamina=Math.min(p.maxStamina,p.stamina+11*dt);
+        if(input.sprint&&p.stamina>1){speed*=1.5;p.stamina=Math.max(0,p.stamina-15*dt)}else p.stamina=Math.min(p.maxStamina,p.stamina+(p.hunger>0?11:3)*dt);
+        p.hunger=hungerAfter(p.hunger,dt,input.sprint&&Math.hypot(input.x,input.z)>.1);
+        if(!p.hunger&&now>=(p.starveAt||0)){
+          p.starveAt=now+5000;p.hp=Math.max(0,p.hp-3);
+          if(!p.hp)this.killPlayer(p,now);
+        }
         const accel=Math.min(1,dt*(Math.hypot(input.x,input.z)>.04?16:24));p.vx+=(input.x*speed-p.vx)*accel;p.vz+=(input.z*speed-p.vz)*accel;
         const position=resolveTerrain(p.x+p.vx*dt,p.z+p.vz*dt);
         p.x=position.x;p.z=position.z;
@@ -503,10 +580,11 @@ export class GameCore {
           // Packed arrays avoid repeating ~20 JSON keys for every nearby animal, 10 times/sec.
           const players=[...room.players.values()].filter(v=>distance(v,p)<200).map(v=>this.packedPlayer(v));
           const npcs=[...room.npcs.values()].filter(n=>distance(n,p)<175).map(n=>[n.id,n.name,n.species,Math.round(n.x*10)/10,Math.round(n.z*10)/10,n.hp,n.maxHp,now<n.deadUntil]);
-          this.emit(p.peer,{type:'snapshot',v:2,time:now,weather:room.weather,players,npcs});
+          this.emit(p.peer,{type:'snapshot',v:2,time:now,weather:room.weather,players,npcs,hunger:Math.round(p.hunger)});
         }
       }
       if(this.tickCount%(TICK_RATE*20)===0)for(const p of room.players.values())this.store.savePosition(p.id,p.x,p.z,p.heading).catch(e=>this.log.error(e));
+      if(this.tickCount%(TICK_RATE*30)===0)for(const p of room.players.values())this.store.saveHunger(p.id,p.hunger).catch(e=>this.log.error(e));
     }
   }
   publicPlayer(p){return {id:p.id,nickname:p.nickname,species:p.species,model:p.model,color:p.color,x:Math.round(p.x*100)/100,z:Math.round(p.z*100)/100,heading:Math.round(p.heading*1000)/1000,hp:Math.round(p.hp),maxHp:p.maxHp,stamina:Math.round(p.stamina),maxStamina:p.maxStamina,pvp:p.pvp,level:p.level,wanted:p.wanted,abilityReady:this.clock()>=p.abilityCooldown,jump:p.jumpUntil>this.clock()};}
