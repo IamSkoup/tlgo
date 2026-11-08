@@ -61,5 +61,11 @@ test('touch controls are present and the landscape layout does not depend on nar
   assert.match(css,/body:has\(#hud:not\(\.hidden\)\) #topbar\{display:none\}/);
   assert.match(logic,/this\.touchLookPointer=e\.pointerId/);
   assert.match(logic,/touchMove\.x/);
+  assert.match(logic,/touchMove\.y=dy\*scale\/radius/);
   assert.match(logic,/holdMobileButton\('mobileJump','Space'/);
+  assert.match(logic,/jumpQueued=true;sendCurrentInput\(true\)/);
+  assert.match(logic,/sprintButton\.onclick/);
+  assert.match(css,/#chatBox\.chat-collapsed\{width:91px\}/);
+  assert.match(css,/#mobilePad #mobileJump\{position:fixed/);
+  assert.match(css,/\.vignette\{opacity:\.12\}/);
 });

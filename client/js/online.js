@@ -113,7 +113,7 @@ function handleMessage(m){
    connection('online','На связи');$('signoutButton').classList.remove('hidden');
    if(!data.profile){createStarterCards();show('creator')}else {show('menu');if(data.desiredRoom)send(data.desiredRoom);updateMenu();}break;
   case 'account':data.profile=m.profile;data.wallet=Number(m.wallet||0);data.owned=m.owned||[];data.ledger=m.ledger||[];data.quests=m.quests||[];data.friends=m.friends||[];data.clan=m.clan||null;updateMenu();if(data.view==='creator'&&data.profile)show('menu');else if(data.view==='panel'&&['animals','appearance','history','friends','clan','quests'].includes(data.activePanel))openPanel(data.activePanel);break;
-  case 'joined':data.room=m.room;data.me=m.you;data.party=null;data.partyInvites=[];data.serverQuest=null;data.desiredRoom=m.room.code?{type:'join',code:m.room.code}:{type:'join'};data.resources=new Map(m.resources.map(r=>[r.id,r]));data.serverQuests=m.quests;scene.syncResources();scene.resetCamera();show('hud');updateObjective();document.body.classList.add('ingame');$('chatChannel').value='session';$('chatHistory').replaceChildren();if(matchMedia('(pointer: coarse)').matches){$('chatBox').classList.add('chat-collapsed');$('chatToggle').textContent='Развернуть'}if(data.pvp)send({type:'pvp',enabled:true});notify('Сессия: '+m.room.name+(m.room.code?' · Код '+m.room.code:''),6);
+  case 'joined':data.room=m.room;data.me=m.you;data.party=null;data.partyInvites=[];data.serverQuest=null;data.desiredRoom=m.room.code?{type:'join',code:m.room.code}:{type:'join'};data.resources=new Map(m.resources.map(r=>[r.id,r]));data.serverQuests=m.quests;scene.syncResources();scene.resetCamera();show('hud');updateObjective();document.body.classList.add('ingame');$('chatChannel').value='session';$('chatHistory').replaceChildren();if(matchMedia('(pointer: coarse)').matches){$('chatBox').classList.add('chat-collapsed');$('chatToggle').textContent='Чат'}if(data.pvp)send({type:'pvp',enabled:true});notify('Сессия: '+m.room.name+(m.room.code?' · Код '+m.room.code:''),6);
    if(!localStorage.getItem('sf_onboard_'+data.me))showOnboard();break;
   case 'snapshot':scene.handleSnapshot(m);break;
   case 'hit':scene.hit(m);break;
@@ -275,7 +275,7 @@ function receiveDirect(message){
 }
 $('chatForm').onsubmit=e=>{e.preventDefault();const field=$('chatInput');if(field.value.trim())send({type:'chat',scope:$('chatChannel').value,body:field.value.trim()});field.value='';field.blur()};
 $('chatChannel').onchange=e=>{const channel=e.target.value;$('chatHistory').replaceChildren();$('chatInput').placeholder=channel==='local'?'Написать тем, кто рядом…':channel==='clan'?'Написать своему прайду…':'Написать в общий чат…';if(channel==='session'||channel==='clan')send({type:'chat_history',scope:channel})};
-$('chatToggle').onclick=()=>{$('chatBox').classList.toggle('chat-collapsed');$('chatToggle').textContent=$('chatBox').classList.contains('chat-collapsed')?'Развернуть':'Свернуть'};
+$('chatToggle').onclick=()=>{$('chatBox').classList.toggle('chat-collapsed');$('chatToggle').textContent=$('chatBox').classList.contains('chat-collapsed')?(matchMedia('(pointer: coarse)').matches?'Чат':'Развернуть'):'Свернуть'};
 function showOnboard(){data.onboardIndex=0;updateOnboard();$('onboarding').classList.remove('hidden')}
 function updateOnboard(){$('onboardText').textContent=TIPS[data.onboardIndex];$('nextOnboard').textContent=data.onboardIndex===TIPS.length-1?'В путь':'Дальше'}
 function finishOnboard(){$('onboarding').classList.add('hidden');if(data.me)localStorage.setItem('sf_onboard_'+data.me,'1')}
@@ -429,6 +429,7 @@ function drawMap(ctx,size,large){
 }
 
 const keys=new Set(),mobile=new Set(),touchMove={x:0,y:0};
+let jumpQueued=false;
 const touchStick=$('touchStick'),touchKnob=$('touchStickKnob');
 let touchMovePointer=null;
 function resetTouchMove(){touchMovePointer=null;touchMove.x=0;touchMove.y=0;touchKnob.style.transform='translate(0px,0px)'}
@@ -436,7 +437,7 @@ function updateTouchMove(e){
  const box=touchStick.getBoundingClientRect(),radius=Math.min(box.width,box.height)*.32;
  const dx=e.clientX-box.left-box.width/2,dy=e.clientY-box.top-box.height/2;
  const distance=Math.hypot(dx,dy),scale=distance>radius?radius/distance:1;
- touchMove.x=dx*scale/radius;touchMove.y=-dy*scale/radius;
+ touchMove.x=dx*scale/radius;touchMove.y=dy*scale/radius;
  touchKnob.style.transform=`translate(${Math.round(dx*scale)}px,${Math.round(dy*scale)}px)`;
 }
 touchStick.addEventListener('pointerdown',e=>{
@@ -456,7 +457,7 @@ addEventListener('keydown',e=>{
  if(e.code==='KeyF'&&data.room&&first)scene.ability();
  if(e.code==='KeyR'&&data.room&&first)scene.talk();
 });
-addEventListener('keyup',e=>keys.delete(e.code));addEventListener('blur',()=>{keys.clear();mobile.clear();resetTouchMove()});
+addEventListener('keyup',e=>keys.delete(e.code));addEventListener('blur',()=>{keys.clear();mobile.clear();resetTouchMove();jumpQueued=false;$('mobileSprint').classList.remove('is-active');$('mobileSprint').setAttribute('aria-pressed','false')});
 for(const b of document.querySelectorAll('[data-move]')){
  const code={up:'KeyW',down:'KeyS',left:'KeyA',right:'KeyD'}[b.dataset.move];
  b.addEventListener('pointerdown',e=>{e.preventDefault();mobile.add(code);b.setPointerCapture(e.pointerId)});
@@ -472,9 +473,16 @@ function holdMobileButton(id,code,onPress){
   if(e.pointerId===activePointer){activePointer=null;mobile.delete(code)}
  });
 }
-holdMobileButton('mobileSprint','ShiftLeft');
-holdMobileButton('mobileJump','Space',()=>sound.play('jump','effects',{volume:.66}));
-$('mobileJump').onclick=e=>{if(e.detail===0){sound.play('jump','effects',{volume:.66});send({type:'input',x:touchMove.x,z:touchMove.y,jump:true})}};
+const sprintButton=$('mobileSprint');
+sprintButton.setAttribute('aria-pressed','false');
+sprintButton.onclick=()=>{
+ const active=!mobile.has('ShiftLeft');
+ if(active)mobile.add('ShiftLeft');else mobile.delete('ShiftLeft');
+ sprintButton.classList.toggle('is-active',active);
+ sprintButton.setAttribute('aria-pressed',String(active));
+};
+holdMobileButton('mobileJump','Space',()=>{sound.play('jump','effects',{volume:.66});jumpQueued=true;sendCurrentInput(true)});
+$('mobileJump').onclick=e=>{if(e.detail===0){sound.play('jump','effects',{volume:.66});jumpQueued=true;sendCurrentInput(true)}};
 $('attackButton').onclick=()=>scene.attack();$('gatherButton').onclick=()=>scene.gather();
 $('abilityButton').onclick=()=>scene.ability();
 $('talkButton').onclick=()=>scene.talk();
@@ -484,12 +492,14 @@ if(matchMedia('(pointer: coarse)').matches){
  $('gatherButton').textContent='Собрать';
  $('talkButton').textContent='Диалог';
 }
-setInterval(()=>{
+function sendCurrentInput(forceJump=false){
  if(!data.room||data.view!=='hud'||!data.ws||data.ws.readyState!==WebSocket.OPEN)return;
  const k=code=>keys.has(code)||mobile.has(code),lr=Number(k('KeyD'))-Number(k('KeyA'))+touchMove.x,ud=Number(k('KeyW'))-Number(k('KeyS'))+touchMove.y;
  const yaw=scene.yaw,vecX=lr*Math.cos(yaw)+ud*Math.sin(yaw),vecZ=-lr*Math.sin(yaw)+ud*Math.cos(yaw);
- send({type:'input',x:vecX,z:vecZ,sprint:k('ShiftLeft')||k('ShiftRight'),jump:k('Space')});
-},65);
+ send({type:'input',x:vecX,z:vecZ,sprint:k('ShiftLeft')||k('ShiftRight'),jump:forceJump||jumpQueued||k('Space')});
+ if(!forceJump)jumpQueued=false;
+}
+setInterval(()=>sendCurrentInput(),65);
 
 async function bootstrap(){
  $('loadProgress').style.width='20%';$('loadLabel').textContent='Восстанавливаем земли прайда…';

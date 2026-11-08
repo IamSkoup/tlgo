@@ -2,7 +2,9 @@
 .touch-stick{display:none}
 @media (pointer:coarse){
  html,body{overscroll-behavior:none}
- #world{touch-action:none}
+ #world{touch-action:none;filter:brightness(1.2) saturate(1.07)}
+ .vignette{opacity:.12}
+ .grain{opacity:.03}
  body:has(#hud:not(.hidden)) #topbar{display:none}
  .hud-top-left{top:calc(env(safe-area-inset-top) + 9px);left:calc(env(safe-area-inset-left) + 13px);max-width:48vw}
  .hud-top-left .eyebrow{font-size:8px;letter-spacing:.13em}
@@ -30,9 +32,14 @@
  .touch-stick-knob{position:absolute;top:50%;left:50%;width:43px;height:43px;margin:-21.5px 0 0 -21.5px;border:2px solid #f4c28b9e;border-radius:50%;background:linear-gradient(150deg,#c38a53,#76502e);box-shadow:0 3px 13px #0008;pointer-events:none;will-change:transform}
  #mobilePad>button{width:54px;height:54px;padding:5px;border-radius:15px;border:1px solid #e7b9888a;background:#33221bdc;font-size:11px;font-weight:800;box-shadow:0 5px 15px #0005;pointer-events:auto;touch-action:none;user-select:none;-webkit-user-select:none}
  #mobileSprint{color:#eac699}
- #chatBox{top:182px;bottom:auto;left:calc(env(safe-area-inset-left) + 13px);width:min(300px,48vw);max-height:48dvh;overflow:auto;border-radius:10px}
- #chatBox.chat-collapsed{width:149px}
+ #mobileSprint.is-active{background:#bc8046;color:#1b1009;border-color:#f8c28b;box-shadow:0 0 0 3px #f5b37132,0 5px 15px #0005}
+ #mobilePad #mobileJump{position:fixed;left:auto;right:calc(env(safe-area-inset-right) + 201px);bottom:calc(env(safe-area-inset-bottom) + 15px)}
+ #chatBox{top:54px;bottom:auto;right:calc(env(safe-area-inset-right) + 13px);left:auto;width:min(290px,calc(100vw - 28px));max-height:48dvh;overflow:auto;border-radius:10px}
+ #chatBox.chat-collapsed{width:91px}
  #chatBox .chat-head{padding:8px 10px;gap:8px}
+ #chatBox.chat-collapsed .chat-head{display:block;padding:0}
+ #chatBox.chat-collapsed .chat-head>span,#chatBox.chat-collapsed .chat-head>select{display:none}
+ #chatBox.chat-collapsed #chatToggle{display:block;width:100%;padding:10px 9px;text-align:center;font-size:11px;font-weight:700;color:#f6d7b3}
  #chatHistory{max-height:20dvh}
  #toastHolder{top:64px;right:calc(env(safe-area-inset-right) + 14px);width:min(240px,34vw)}
  .toast{padding:9px 11px;font-size:10px}
@@ -54,7 +61,7 @@
  .connection{position:static}
  .overlay.centered{padding:10px}.auth-card,.creator-card,.panel-card{padding:17px}.creator-card{max-height:94dvh}.panel{padding:10px}
  .hud-bottom-left{top:68px}
- #chatBox{top:68px;left:calc(env(safe-area-inset-left) + 205px)}
+ #chatBox{top:54px;right:calc(env(safe-area-inset-right) + 13px);left:auto}
  #hudObjective{max-width:min(360px,35vw)}
 }
 @media (pointer:coarse) and (orientation:portrait){
@@ -67,18 +74,18 @@
  .touch-stick{position:absolute;left:0;bottom:0;width:112px;height:112px}
  #mobilePad>button{position:absolute;width:53px;height:53px;left:104px;font-size:10px}
  #mobileSprint{bottom:88px}
- #mobileJump{bottom:27px}
+ #mobilePad #mobileJump{position:fixed;left:auto;right:calc(env(safe-area-inset-right) + 140px);bottom:calc(env(safe-area-inset-bottom) + 47px)}
  .hud-bottom-right{right:calc(env(safe-area-inset-right) + 10px);bottom:calc(env(safe-area-inset-bottom) + 47px);width:119px;display:grid;grid-template-columns:repeat(2,54px);gap:9px}
  .hud-bottom-right .action-circle{width:54px;height:54px}
  #hudObjective{bottom:calc(env(safe-area-inset-bottom) + 220px);width:calc(100% - 28px);max-width:310px;font-size:11px}
- #chatBox{top:287px;width:min(290px,calc(100vw - 24px))}
- #chatBox.chat-collapsed{width:149px}
+ #chatBox{top:62px;left:auto;right:calc(env(safe-area-inset-right) + 10px);width:min(290px,calc(100vw - 24px))}
+ #chatBox.chat-collapsed{width:91px}
  #toastHolder{top:75px;width:min(220px,56vw)}
 }
 @media (pointer:coarse) and (max-height:380px){
  .hud-top-left #weather,.hud-top-left .eyebrow,#minimap{display:none}
  .hud-bottom-left{top:44px}
- #chatBox{top:120px}
+ #chatBox{top:52px;right:calc(env(safe-area-inset-right) + 13px);left:auto}
  .touch-stick{width:96px;height:96px}
  #mobilePad{bottom:9px}
  #hudObjective{bottom:8px;max-width:27vw;font-size:10px}
